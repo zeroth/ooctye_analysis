@@ -1,0 +1,10 @@
+name: napari-ooctyle-analysis
+display_name: OoctyleAnalysis
+contributions:
+  commands:
+    - id: napari-ooctyle-analysis.make_ooctyle_widget
+      python_name: napari_ooctyle_analysis._widget:OoctyleAnalysisWidget
+      title: Open OoctyleAnalysis Widget
+  widgets:
+    - command: napari-ooctyle-analysis.make_ooctyle_widget
+      display_name: OoctyleAnalysis

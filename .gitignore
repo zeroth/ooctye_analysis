@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+src/*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.tox/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# setuptools-scm
+src/napari_ooctyle_analysis/_version.py
+
+# OS
+.DS_Store
+Thumbs.db

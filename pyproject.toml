@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools-scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "napari-ooctyle-analysis"
+dynamic = ["version"]
+description = "A napari plugin for oocyte analysis."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Abhishek Patil", email = "abhishek@zeroth.me" },
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Framework :: napari",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+
+dependencies = [
+    "numpy",
+]
+
+[project.optional-dependencies]
+testing = [
+    "tox",
+    "pytest",
+    "pytest-cov",
+    "pytest-qt",
+    "napari",
+    "pyqt5",
+]
+dev = [
+    "pre-commit",
+    "ruff",
+]
+
+[project.urls]
+"Bug Tracker" = "https://github.com/zeroth/napari-ooctyle-analysis/issues"
+"Source Code" = "https://github.com/zeroth/napari-ooctyle-analysis"
+
+[project.entry-points."napari.manifest"]
+napari-ooctyle-analysis = "napari_ooctyle_analysis:napari.yaml"
+
+[tool.setuptools_scm]
+write_to = "src/napari_ooctyle_analysis/_version.py"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"napari_ooctyle_analysis" = ["napari.yaml"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W", "I",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["src/napari_ooctyle_analysis/_tests"]
+
+[tool.coverage.run]
+source = ["napari_ooctyle_analysis"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
