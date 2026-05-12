@@ -628,3 +628,68 @@ class TestRegionWidgets:
         assert s is not None
         np.testing.assert_allclose(s.center_px, [10.0, 0.0, 10.0])
         assert abs(s.radius_physical - 10.0) < 1e-6
+
+
+# ------------------------------------------------------------------
+# Containment validation tests
+# ------------------------------------------------------------------
+
+
+class TestContainmentValidation:
+    def _add_line(self, viewer, name, p1, p2):
+        viewer.add_shapes(
+            [np.array([p1, p2])], shape_type="line", name=name,
+        )
+
+    def test_no_warning_when_nested(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        widget = OoctyleAnalysisWidget(viewer)
+        # All three regions share the same center (50, 50, 50) at unit scale.
+        # Oocyte radius=50, Perinuclear radius=20, Exclusion radius=5.
+        # Containment: 0+20<=50 ✓, 0+5<=20 ✓, 0+5<=50 ✓  → no warnings.
+        self._add_line(viewer, "Oocyte line",      [50, 50, 0],  [50, 50, 100])
+        self._add_line(viewer, "Perinuclear line", [50, 50, 30], [50, 50, 70])
+        self._add_line(viewer, "Exclusion line",   [50, 50, 45], [50, 50, 55])
+        widget._refresh_image_layers()
+        for key, name in [("oocyte", "Oocyte line"),
+                          ("perinuclear", "Perinuclear line"),
+                          ("exclude", "Exclusion line")]:
+            widget._region_combos[key].setCurrentText(name)
+        widget._update_containment_status()
+        assert widget._region_status.text() == ""
+
+    def test_warning_when_exclude_outside_perinuclear(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        widget = OoctyleAnalysisWidget(viewer)
+        self._add_line(viewer, "Oocyte line",      [50, 0, 0], [50, 0, 200])
+        self._add_line(viewer, "Perinuclear line", [50, 50, 40], [50, 50, 60])
+        self._add_line(viewer, "Exclusion line",   [50, 50, 100], [50, 50, 110])
+        widget._refresh_image_layers()
+        for key, name in [("oocyte", "Oocyte line"),
+                          ("perinuclear", "Perinuclear line"),
+                          ("exclude", "Exclusion line")]:
+            widget._region_combos[key].setCurrentText(name)
+        widget._update_containment_status()
+        assert "exclude" in widget._region_status.text().lower()
+        assert "perinuclear" in widget._region_status.text().lower()
+
+    def test_warning_when_perinuclear_outside_oocyte(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        widget = OoctyleAnalysisWidget(viewer)
+        self._add_line(viewer, "Oocyte line",      [50, 50, 0], [50, 50, 10])
+        self._add_line(viewer, "Perinuclear line", [50, 50, 0], [50, 50, 100])
+        widget._refresh_image_layers()
+        widget._region_combos["oocyte"].setCurrentText("Oocyte line")
+        widget._region_combos["perinuclear"].setCurrentText("Perinuclear line")
+        widget._update_containment_status()
+        assert "perinuclear" in widget._region_status.text().lower()
+        assert "oocyte" in widget._region_status.text().lower()
+
+    def test_missing_region_skips_check(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        widget = OoctyleAnalysisWidget(viewer)
+        self._add_line(viewer, "Exclusion line", [0, 0, 0], [0, 0, 10])
+        widget._refresh_image_layers()
+        widget._region_combos["exclude"].setCurrentText("Exclusion line")
+        widget._update_containment_status()
+        assert widget._region_status.text() == ""

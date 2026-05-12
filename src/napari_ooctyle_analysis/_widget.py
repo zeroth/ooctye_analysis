@@ -541,6 +541,26 @@ class OoctyleAnalysisWidget(QWidget):
     def _get_all_region_spheres(self, ndim: int = 3) -> dict:
         return {key: self._get_region_sphere(key, ndim=ndim) for key, _, _ in REGION_DESCRIPTORS}
 
+    def _update_containment_status(self) -> None:
+        """Recompute nesting (exclude in perinuclear in oocyte) and update status label."""
+        spheres = self._get_all_region_spheres(ndim=3)
+        issues: list[str] = []
+        if spheres["exclude"] is not None and spheres["perinuclear"] is not None:
+            if not regions.contains_sphere(spheres["perinuclear"], spheres["exclude"]):
+                issues.append("exclude region is not inside perinuclear region")
+        if spheres["perinuclear"] is not None and spheres["oocyte"] is not None:
+            if not regions.contains_sphere(spheres["oocyte"], spheres["perinuclear"]):
+                issues.append("perinuclear region is not inside oocyte region")
+        if spheres["exclude"] is not None and spheres["oocyte"] is not None:
+            if not regions.contains_sphere(spheres["oocyte"], spheres["exclude"]):
+                issues.append("exclude region is not inside oocyte region")
+        if issues:
+            self._region_status.setStyleSheet("color: red;")
+            self._region_status.setText("Warning: " + "; ".join(issues))
+        else:
+            self._region_status.setStyleSheet("")
+            self._region_status.setText("")
+
     # ==================================================================
     # Detection
     # ==================================================================
@@ -567,6 +587,8 @@ class OoctyleAnalysisWidget(QWidget):
         if image.ndim < 3:
             self._status_label.setText("Please select a 3D image (ZYX).")
             return
+
+        self._update_containment_status()
 
         self._detect_btn.setEnabled(False)
         self._status_label.setText("Loading model...")
@@ -698,6 +720,7 @@ class OoctyleAnalysisWidget(QWidget):
                 widget.deleteLater()
 
     def _run_overlap_analysis(self):
+        self._update_containment_status()
         name_a = self._mask_a_combo.currentText()
         name_b = self._mask_b_combo.currentText()
 
