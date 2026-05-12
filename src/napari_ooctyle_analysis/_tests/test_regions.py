@@ -3,7 +3,14 @@ import dataclasses
 import numpy as np
 import pytest
 
-from napari_ooctyle_analysis._regions import Sphere, contains_sphere, sphere_from_line
+from napari_ooctyle_analysis._regions import (
+    Sphere,
+    apply_sphere_to_mask,
+    contains_sphere,
+    filter_spots,
+    sphere_from_line,
+    sphere_to_mask,
+)
 
 
 class TestSphereDataclass:
@@ -112,3 +119,74 @@ class TestContainsSphere:
             scale=np.array([2.0, 1.0, 1.0]),
         )
         assert contains_sphere(outer, inner) is True
+
+
+class TestApplySphereToMask:
+    def test_zero_inside(self):
+        mask = np.ones((10, 10, 10), dtype=np.uint8)
+        s = Sphere(
+            center_px=np.array([5.0, 5.0, 5.0]),
+            radius_physical=2.0,
+            scale=np.array([1.0, 1.0, 1.0]),
+        )
+        apply_sphere_to_mask(mask, s, mode="zero_inside")
+        assert mask[5, 5, 5] == 0
+        assert mask[0, 0, 0] == 1
+
+    def test_zero_outside(self):
+        mask = np.ones((10, 10, 10), dtype=np.uint8)
+        s = Sphere(
+            center_px=np.array([5.0, 5.0, 5.0]),
+            radius_physical=2.0,
+            scale=np.array([1.0, 1.0, 1.0]),
+        )
+        apply_sphere_to_mask(mask, s, mode="zero_outside")
+        assert mask[5, 5, 5] == 1
+        assert mask[0, 0, 0] == 0
+
+
+class TestFilterSpots:
+    SCALE = np.array([1.0, 1.0, 1.0])
+
+    def test_keep_outside(self):
+        spots = np.array([[5.0, 5.0, 5.0], [50.0, 50.0, 50.0]])
+        s = Sphere(np.array([5.0, 5.0, 5.0]), 10.0, self.SCALE)
+        kept = filter_spots(spots, s, keep="outside")
+        assert len(kept) == 1
+        np.testing.assert_array_equal(kept[0], [50.0, 50.0, 50.0])
+
+    def test_keep_inside(self):
+        spots = np.array([[5.0, 5.0, 5.0], [50.0, 50.0, 50.0]])
+        s = Sphere(np.array([5.0, 5.0, 5.0]), 10.0, self.SCALE)
+        kept = filter_spots(spots, s, keep="inside")
+        assert len(kept) == 1
+        np.testing.assert_array_equal(kept[0], [5.0, 5.0, 5.0])
+
+    def test_empty_spots(self):
+        spots = np.zeros((0, 3))
+        s = Sphere(np.array([0.0, 0.0, 0.0]), 1.0, self.SCALE)
+        assert filter_spots(spots, s, keep="outside").shape == (0, 3)
+
+
+class TestSphereToMask:
+    def test_boolean_mask_inside_sphere(self):
+        s = Sphere(
+            center_px=np.array([5.0, 5.0, 5.0]),
+            radius_physical=2.0,
+            scale=np.array([1.0, 1.0, 1.0]),
+        )
+        m = sphere_to_mask(s, (10, 10, 10))
+        assert m.dtype == bool
+        assert m[5, 5, 5]
+        assert not m[0, 0, 0]
+
+    def test_anisotropic_scale(self):
+        s = Sphere(
+            center_px=np.array([5.0, 5.0, 5.0]),
+            radius_physical=2.0,
+            scale=np.array([3.0, 1.0, 1.0]),
+        )
+        m = sphere_to_mask(s, (10, 10, 10))
+        assert m[5, 5, 5]
+        assert not m[4, 5, 5]  # 1 px in Z = 3 um, > 2 um radius
+        assert not m[6, 5, 5]

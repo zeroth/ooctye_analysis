@@ -6,6 +6,7 @@ unit-tested in isolation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 
@@ -60,3 +61,57 @@ def contains_sphere(outer: Sphere, inner: Sphere) -> bool:
     delta_px = inner.center_px - outer.center_px
     distance_physical = float(np.linalg.norm(delta_px * outer.scale))
     return distance_physical + inner.radius_physical <= outer.radius_physical + 1e-9
+
+
+def _distance_sq_physical(
+    shape: tuple[int, ...],
+    center_px: np.ndarray,
+    scale: np.ndarray,
+) -> np.ndarray:
+    """Per-voxel squared physical distance from center_px."""
+    grids = np.indices(shape, dtype=np.float64)
+    dist_sq = np.zeros(shape, dtype=np.float64)
+    for d in range(len(shape)):
+        dist_sq += ((grids[d] - center_px[d]) * scale[d]) ** 2
+    return dist_sq
+
+
+def apply_sphere_to_mask(
+    mask: np.ndarray,
+    sphere: Sphere,
+    *,
+    mode: Literal["zero_inside", "zero_outside"],
+) -> None:
+    """In-place: zero voxels either inside or outside the sphere."""
+    dist_sq = _distance_sq_physical(mask.shape, sphere.center_px, sphere.scale)
+    r2 = sphere.radius_physical ** 2
+    if mode == "zero_inside":
+        mask[dist_sq <= r2] = 0
+    elif mode == "zero_outside":
+        mask[dist_sq > r2] = 0
+    else:
+        raise ValueError(f"Unknown mode: {mode!r}")
+
+
+def filter_spots(
+    spots: np.ndarray,
+    sphere: Sphere,
+    *,
+    keep: Literal["outside", "inside"],
+) -> np.ndarray:
+    """Return spots whose physical distance from sphere center is outside / inside."""
+    if len(spots) == 0:
+        return spots
+    delta_physical = (spots - sphere.center_px) * sphere.scale
+    distances = np.linalg.norm(delta_physical, axis=1)
+    if keep == "outside":
+        return spots[distances > sphere.radius_physical]
+    if keep == "inside":
+        return spots[distances <= sphere.radius_physical]
+    raise ValueError(f"Unknown keep value: {keep!r}")
+
+
+def sphere_to_mask(sphere: Sphere, shape: tuple[int, ...]) -> np.ndarray:
+    """Return a boolean mask True for voxels inside the sphere."""
+    dist_sq = _distance_sq_physical(shape, sphere.center_px, sphere.scale)
+    return dist_sq <= sphere.radius_physical ** 2
