@@ -11,7 +11,11 @@ from napari_ooctyle_analysis._segmentation import (
     filter_spots_by_sphere,
     generate_save_path,
 )
-from napari_ooctyle_analysis._analysis import compute_overlap
+from napari_ooctyle_analysis._analysis import (
+    compute_overlap,
+    compute_zonal_voxels,
+    create_zonal_figure,
+)
 
 
 def test_widget_creation(make_napari_viewer):
@@ -757,3 +761,44 @@ class TestOocyteClipping:
         assert captured["mask"][0, 0, 0] == 0
         assert captured["mask"][10, 20, 20] == 0
         assert captured["mask"][10, 20, 25] == 1
+
+
+class TestComputeZonalVoxels:
+    def test_partitions_oocyte_into_peri_and_rest(self):
+        shape = (10, 10, 10)
+        oocyte = np.ones(shape, dtype=bool)
+        peri = np.zeros(shape, dtype=bool); peri[3:7, 3:7, 3:7] = True
+        excl = np.zeros(shape, dtype=bool); excl[4:6, 4:6, 4:6] = True
+        channel = np.ones(shape, dtype=np.uint8)
+
+        result = compute_zonal_voxels(channel, oocyte, peri, excl)
+        # Perinuclear minus exclude: 4^3 - 2^3 = 56
+        # Rest of oocyte (oocyte minus peri): 10^3 - 4^3 = 936
+        assert result["n_perinuclear"] == 56
+        assert result["n_rest_oocyte"] == 936
+        assert result["n_total"] == result["n_perinuclear"] + result["n_rest_oocyte"]
+
+    def test_channel_outside_oocyte_ignored(self):
+        shape = (10, 10, 10)
+        oocyte = np.zeros(shape, dtype=bool); oocyte[:5] = True
+        peri = np.zeros(shape, dtype=bool); peri[:2] = True
+        excl = np.zeros(shape, dtype=bool)
+        channel = np.ones(shape, dtype=np.uint8)
+
+        result = compute_zonal_voxels(channel, oocyte, peri, excl)
+        assert result["n_perinuclear"] == 200
+        assert result["n_rest_oocyte"] == 300
+        assert result["n_total"] == 500
+
+
+class TestZonalFigure:
+    def test_returns_figure_with_two_axes(self):
+        results = [
+            {"n_perinuclear": 100, "n_rest_oocyte": 400, "n_total": 500,
+             "pct_perinuclear": 20.0, "pct_rest_oocyte": 80.0},
+            {"n_perinuclear": 250, "n_rest_oocyte": 250, "n_total": 500,
+             "pct_perinuclear": 50.0, "pct_rest_oocyte": 50.0},
+        ]
+        fig = create_zonal_figure(["Mask A", "Mask B"], results)
+        assert fig is not None
+        assert len(fig.axes) == 2
