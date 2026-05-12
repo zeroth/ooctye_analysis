@@ -1,3 +1,5 @@
+import dataclasses
+
 import numpy as np
 import pytest
 
@@ -20,8 +22,19 @@ class TestSphereDataclass:
             radius_physical=1.0,
             scale=np.array([1.0, 1.0, 1.0]),
         )
-        with pytest.raises(Exception):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             s.radius_physical = 9.0  # type: ignore[misc]
+
+    def test_arrays_are_immutable(self):
+        s = Sphere(
+            center_px=np.array([1.0, 2.0, 3.0]),
+            radius_physical=4.0,
+            scale=np.array([1.0, 1.0, 1.0]),
+        )
+        with pytest.raises(ValueError):
+            s.center_px[0] = 99.0
+        with pytest.raises(ValueError):
+            s.scale[0] = 99.0
 
 
 class TestSphereFromLine:

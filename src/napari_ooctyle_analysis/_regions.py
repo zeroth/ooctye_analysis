@@ -17,6 +17,14 @@ class Sphere:
     radius_physical: float
     scale: np.ndarray
 
+    def __post_init__(self):
+        center = np.array(self.center_px, dtype=np.float64, copy=True)
+        center.setflags(write=False)
+        object.__setattr__(self, "center_px", center)
+        scale = np.array(self.scale, dtype=np.float64, copy=True)
+        scale.setflags(write=False)
+        object.__setattr__(self, "scale", scale)
+
 
 def sphere_from_line(
     line: np.ndarray,
