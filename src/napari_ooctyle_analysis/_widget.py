@@ -755,6 +755,32 @@ class OoctyleAnalysisWidget(QWidget):
             f"({result['pct_a']:.1f}% of A, {result['pct_b']:.1f}% of B)"
         )
 
+        self._maybe_add_zonal_chart(mask_a, mask_b, name_a, name_b)
+
+    def _maybe_add_zonal_chart(self, mask_a, mask_b, name_a: str, name_b: str) -> None:
+        spheres = self._get_all_region_spheres(ndim=mask_a.ndim)
+        oocyte = spheres["oocyte"]
+        peri = spheres["perinuclear"]
+        if oocyte is None or peri is None:
+            return
+        exclude = spheres["exclude"]
+        oocyte_mask = regions.sphere_to_mask(oocyte, mask_a.shape)
+        peri_mask = regions.sphere_to_mask(peri, mask_a.shape)
+        if exclude is not None:
+            excl_mask = regions.sphere_to_mask(exclude, mask_a.shape)
+        else:
+            excl_mask = np.zeros(mask_a.shape, dtype=bool)
+
+        result_a = analysis.compute_zonal_voxels(mask_a, oocyte_mask, peri_mask, excl_mask)
+        result_b = analysis.compute_zonal_voxels(mask_b, oocyte_mask, peri_mask, excl_mask)
+
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        fig = analysis.create_zonal_figure([name_a, name_b], [result_a, result_b])
+        canvas = FigureCanvasQTAgg(fig)
+        canvas.setMinimumHeight(280)
+        count = self._charts_layout.count()
+        self._charts_layout.insertWidget(count - 1, canvas)
+
     # ==================================================================
     # Fine-tuning
     # ==================================================================

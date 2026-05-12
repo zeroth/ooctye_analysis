@@ -802,3 +802,39 @@ class TestZonalFigure:
         fig = create_zonal_figure(["Mask A", "Mask B"], results)
         assert fig is not None
         assert len(fig.axes) == 2
+
+
+class TestZonalChartWiring:
+    def test_no_zonal_chart_when_regions_missing(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        mask_a = np.ones((10, 10, 10), dtype=np.uint8)
+        mask_b = np.ones((10, 10, 10), dtype=np.uint8)
+        viewer.add_labels(mask_a, name="A")
+        viewer.add_labels(mask_b, name="B")
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._mask_a_combo.setCurrentText("A")
+        widget._mask_b_combo.setCurrentText("B")
+        widget._run_overlap_analysis()
+        assert widget._charts_layout.count() == 2
+
+    def test_zonal_chart_added_when_both_regions_drawn(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        mask_a = np.ones((10, 10, 10), dtype=np.uint8)
+        mask_b = np.ones((10, 10, 10), dtype=np.uint8)
+        viewer.add_labels(mask_a, name="A")
+        viewer.add_labels(mask_b, name="B")
+        viewer.add_shapes(
+            [np.array([[5.0, 5.0, 0.0], [5.0, 5.0, 10.0]])],
+            shape_type="line", name="Oocyte line",
+        )
+        viewer.add_shapes(
+            [np.array([[5.0, 5.0, 3.0], [5.0, 5.0, 7.0]])],
+            shape_type="line", name="Perinuclear line",
+        )
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._mask_a_combo.setCurrentText("A")
+        widget._mask_b_combo.setCurrentText("B")
+        widget._region_combos["oocyte"].setCurrentText("Oocyte line")
+        widget._region_combos["perinuclear"].setCurrentText("Perinuclear line")
+        widget._run_overlap_analysis()
+        assert widget._charts_layout.count() == 3
