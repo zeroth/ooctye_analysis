@@ -646,7 +646,9 @@ class OoctyleAnalysisWidget(QWidget):
                 f"(r={exclude.radius_physical:.1f} um at "
                 f"{np.array2string(exclude.center_px, precision=1)} px)"
             )
-        for key in ("oocyte", "perinuclear", "exclude"):
+        else:
+            self._region_status.setText("")
+        for key, _, _ in REGION_DESCRIPTORS:
             sphere = region_spheres[key]
             if sphere is not None and self._region_show[key].isChecked():
                 self._visualize_region_sphere(key, sphere)
