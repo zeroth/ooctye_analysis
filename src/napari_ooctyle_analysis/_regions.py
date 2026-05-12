@@ -49,3 +49,14 @@ def sphere_from_line(
     delta_physical = (p2 - p1) * scale
     radius_physical = float(np.linalg.norm(delta_physical)) / 2.0
     return Sphere(center_px=center_px, radius_physical=radius_physical, scale=scale)
+
+
+def contains_sphere(outer: Sphere, inner: Sphere) -> bool:
+    """True iff every point of inner lies inside (or on the surface of) outer.
+
+    Physical-space distance check (anisotropic-scale aware), using the outer
+    sphere's scale (both spheres are built from the same image scale).
+    """
+    delta_px = inner.center_px - outer.center_px
+    distance_physical = float(np.linalg.norm(delta_px * outer.scale))
+    return distance_physical + inner.radius_physical <= outer.radius_physical + 1e-9

@@ -3,7 +3,7 @@ import dataclasses
 import numpy as np
 import pytest
 
-from napari_ooctyle_analysis._regions import Sphere, sphere_from_line
+from napari_ooctyle_analysis._regions import Sphere, contains_sphere, sphere_from_line
 
 
 class TestSphereDataclass:
@@ -68,3 +68,47 @@ class TestSphereFromLine:
     def test_wrong_vertex_count_returns_none(self):
         line = np.array([[0.0, 0.0, 0.0]])  # only 1 vertex
         assert sphere_from_line(line, self.SCALE) is None
+
+
+class TestContainsSphere:
+    SCALE = np.array([1.0, 1.0, 1.0])
+
+    def _sphere(self, center, radius):
+        return Sphere(
+            center_px=np.array(center, dtype=np.float64),
+            radius_physical=float(radius),
+            scale=self.SCALE,
+        )
+
+    def test_fully_inside(self):
+        outer = self._sphere([0, 0, 0], 10.0)
+        inner = self._sphere([0, 0, 0], 5.0)
+        assert contains_sphere(outer, inner) is True
+
+    def test_concentric_equal_radius(self):
+        outer = self._sphere([0, 0, 0], 5.0)
+        inner = self._sphere([0, 0, 0], 5.0)
+        assert contains_sphere(outer, inner) is True
+
+    def test_inner_pokes_out(self):
+        outer = self._sphere([0, 0, 0], 5.0)
+        inner = self._sphere([3, 0, 0], 3.0)
+        assert contains_sphere(outer, inner) is False
+
+    def test_disjoint(self):
+        outer = self._sphere([0, 0, 0], 1.0)
+        inner = self._sphere([100, 0, 0], 1.0)
+        assert contains_sphere(outer, inner) is False
+
+    def test_anisotropic_scale(self):
+        outer = Sphere(
+            center_px=np.array([0.0, 0.0, 0.0]),
+            radius_physical=10.0,
+            scale=np.array([2.0, 1.0, 1.0]),
+        )
+        inner = Sphere(
+            center_px=np.array([4.0, 0.0, 0.0]),  # 4 px * 2 um/px = 8 um away
+            radius_physical=1.0,
+            scale=np.array([2.0, 1.0, 1.0]),
+        )
+        assert contains_sphere(outer, inner) is True
