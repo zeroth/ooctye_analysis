@@ -693,3 +693,67 @@ class TestContainmentValidation:
         widget._region_combos["exclude"].setCurrentText("Exclusion line")
         widget._update_containment_status()
         assert widget._region_status.text() == ""
+
+
+class TestOocyteClipping:
+    def test_clip_spots_and_mask(self, monkeypatch, make_napari_viewer):
+        viewer = make_napari_viewer()
+        img = np.zeros((20, 40, 40), dtype=np.float32)
+        viewer.add_image(img, name="vol")
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._image_combo.setCurrentText("vol")
+
+        viewer.add_shapes(
+            [np.array([[10.0, 20.0, 10.0], [10.0, 20.0, 30.0]])],
+            shape_type="line", name="Oocyte line",
+        )
+        viewer.add_shapes(
+            [np.array([[10.0, 20.0, 19.0], [10.0, 20.0, 21.0]])],
+            shape_type="line", name="Exclusion line",
+        )
+        widget._refresh_image_layers()
+        widget._region_combos["oocyte"].setCurrentText("Oocyte line")
+        widget._region_combos["exclude"].setCurrentText("Exclusion line")
+
+        fake_spots = np.array([
+            [10.0, 20.0, 25.0],  # inside oocyte, outside exclude
+            [10.0, 20.0, 20.0],  # inside exclude
+            [0.0, 0.0, 0.0],     # outside oocyte
+        ], dtype=np.float64)
+        fake_mask = np.ones_like(img, dtype=np.uint8)
+
+        from napari_ooctyle_analysis._workers import PredictWorker
+        captured = {}
+
+        def fake_run(self):
+            from napari_ooctyle_analysis._regions import (
+                apply_sphere_to_mask, filter_spots,
+            )
+            spots = fake_spots.copy()
+            mask = fake_mask.copy()
+            oocyte = self.regions.get("oocyte")
+            exclude = self.regions.get("exclude")
+            if oocyte is not None:
+                spots = filter_spots(spots, oocyte, keep="inside")
+                apply_sphere_to_mask(mask, oocyte, mode="zero_outside")
+            if exclude is not None:
+                spots = filter_spots(spots, exclude, keep="outside")
+                apply_sphere_to_mask(mask, exclude, mode="zero_inside")
+            captured["spots"] = spots
+            captured["mask"] = mask
+
+        monkeypatch.setattr(PredictWorker, "run", fake_run)
+
+        region_spheres = widget._get_all_region_spheres(ndim=3)
+        worker = PredictWorker(
+            model=None, image=img,
+            prob_thresh=0.5, min_distance=2, exclude_border=False,
+            device="cpu", regions=region_spheres,
+        )
+        worker.run()
+
+        assert len(captured["spots"]) == 1
+        np.testing.assert_allclose(captured["spots"][0], [10.0, 20.0, 25.0])
+        assert captured["mask"][0, 0, 0] == 0
+        assert captured["mask"][10, 20, 20] == 0
+        assert captured["mask"][10, 20, 25] == 1

@@ -612,12 +612,7 @@ class OoctyleAnalysisWidget(QWidget):
             min_distance=self._min_distance.value(),
             exclude_border=self._exclude_border.isChecked(),
             device=self._device_string(),
-            exclusion=(
-                (region_spheres["exclude"].center_px,
-                 region_spheres["exclude"].radius_physical,
-                 region_spheres["exclude"].scale)
-                if region_spheres["exclude"] is not None else None
-            ),
+            regions=region_spheres,
         )
         self._predict_worker.progress.connect(self._on_detection_progress)
         self._predict_worker.finished.connect(self._on_detection_finished)
@@ -661,8 +656,6 @@ class OoctyleAnalysisWidget(QWidget):
         region_spheres = self._get_all_region_spheres(ndim=mask.ndim)
         exclude = region_spheres["exclude"]
         if exclude is not None:
-            from napari_ooctyle_analysis._regions import apply_sphere_to_mask
-            apply_sphere_to_mask(mask, exclude, mode="zero_inside")
             self._region_status.setText(
                 f"Excluded {n_excluded} spots "
                 f"(r={exclude.radius_physical:.1f} um at "
