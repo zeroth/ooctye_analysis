@@ -6,6 +6,7 @@ import pytest
 from napari_ooctyle_analysis._regions import (
     Sphere,
     apply_sphere_to_mask,
+    build_sphere_mesh,
     contains_sphere,
     filter_spots,
     sphere_from_line,
@@ -190,3 +191,19 @@ class TestSphereToMask:
         assert m[5, 5, 5]
         assert not m[4, 5, 5]  # 1 px in Z = 3 um, > 2 um radius
         assert not m[6, 5, 5]
+
+
+class TestBuildSphereMesh:
+    def test_returns_vertices_and_faces(self):
+        s = Sphere(
+            center_px=np.array([10.0, 20.0, 20.0]),
+            radius_physical=5.0,
+            scale=np.array([1.0, 1.0, 1.0]),
+        )
+        vertices, faces = build_sphere_mesh(s)
+        assert vertices.ndim == 2 and vertices.shape[1] == 3
+        assert faces.ndim == 2 and faces.shape[1] == 3
+        assert vertices.shape[0] > 0 and faces.shape[0] > 0
+        for axis in range(3):
+            extent = vertices[:, axis].max() - vertices[:, axis].min()
+            assert abs(extent - 2 * 5.0) < 0.5

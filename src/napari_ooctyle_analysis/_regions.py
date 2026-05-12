@@ -115,3 +115,29 @@ def sphere_to_mask(sphere: Sphere, shape: tuple[int, ...]) -> np.ndarray:
     """Return a boolean mask True for voxels inside the sphere."""
     dist_sq = _distance_sq_physical(shape, sphere.center_px, sphere.scale)
     return dist_sq <= sphere.radius_physical ** 2
+
+
+def build_sphere_mesh(sphere: Sphere) -> tuple[np.ndarray, np.ndarray]:
+    """Return (vertices, faces) for a triangulated ellipsoid surface."""
+    radii_px = sphere.radius_physical / sphere.scale
+
+    n_phi, n_theta = 30, 30
+    phi = np.linspace(0, np.pi, n_phi)
+    theta = np.linspace(0, 2 * np.pi, n_theta)
+    phi, theta = np.meshgrid(phi, theta)
+
+    z = radii_px[0] * np.cos(phi) + sphere.center_px[0]
+    y = radii_px[1] * np.sin(phi) * np.cos(theta) + sphere.center_px[1]
+    x = radii_px[2] * np.sin(phi) * np.sin(theta) + sphere.center_px[2]
+
+    vertices = np.stack([z.ravel(), y.ravel(), x.ravel()], axis=1)
+
+    faces = []
+    for i in range(n_theta):
+        for j in range(n_phi - 1):
+            idx = i * n_phi + j
+            next_i = ((i + 1) % n_theta) * n_phi + j
+            faces.append([idx, next_i, idx + 1])
+            faces.append([next_i, next_i + 1, idx + 1])
+    faces = np.array(faces)
+    return vertices, faces
