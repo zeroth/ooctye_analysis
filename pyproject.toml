@@ -30,6 +30,9 @@ classifiers = [
 
 dependencies = [
     "numpy",
+    "spotiflow>=0.6.0",
+    "qtpy",
+    "matplotlib",
 ]
 
 [project.optional-dependencies]
