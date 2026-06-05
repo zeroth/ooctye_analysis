@@ -88,12 +88,22 @@ class PredictWorker(QThread):
             if nucleus is not None:
                 apply_sphere_to_mask(mask, nucleus, mode="zero_inside")
 
+            from scipy.ndimage import label as ndlabel
+            from napari_ooctyle_analysis._analysis import compute_spot_regionprops
+
+            self.progress.emit("Measuring spot intensities", 0, 0)
+            labeled_mask, n_labels = ndlabel(mask)
+            spot_intensity = compute_spot_regionprops(labeled_mask, img_for_fit)
+
             model_meta = {
                 "sigma": self.model.config.sigma,
                 "grid": tuple(self.model.config.grid) if self.model.config.is_3d else (1, 1),
                 "image_shape": self.image.shape,
                 "n_excluded": n_excluded,
                 "mask": mask,
+                "labeled_mask": labeled_mask,
+                "n_labels": n_labels,
+                "spot_intensity": spot_intensity,
             }
             self.finished.emit(spots, details, model_meta)
         except Exception as e:

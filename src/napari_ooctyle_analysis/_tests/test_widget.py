@@ -1011,3 +1011,29 @@ class TestSpotTableToRows:
         header, rows = spot_table_to_rows(table)
         assert header[0] == "label"
         assert rows == []
+
+
+class TestWorkerRegionpropsPipeline:
+    def test_nucleus_spot_excluded_from_table(self):
+        from napari_ooctyle_analysis._analysis import compute_spot_regionprops
+        from napari_ooctyle_analysis._regions import Sphere, apply_sphere_to_mask
+        from scipy.ndimage import label as ndlabel
+
+        shape = (1, 20, 20)
+        intensity = np.zeros(shape, dtype=np.float32)
+        mask = np.zeros(shape, dtype=np.uint8)
+        # Spot A: outside nucleus (far corner). Spot B: at the nucleus center.
+        mask[0, 2:4, 2:4] = 1;  intensity[0, 2:4, 2:4] = 50.0
+        mask[0, 9:11, 9:11] = 1; intensity[0, 9:11, 9:11] = 99.0
+        nucleus = Sphere(
+            center_px=np.array([0.0, 10.0, 10.0]),
+            radius_physical=3.0,
+            scale=np.array([1.0, 1.0, 1.0]),
+        )
+        # Worker pipeline: zero inside nucleus, then label, then regionprops.
+        apply_sphere_to_mask(mask, nucleus, mode="zero_inside")
+        labeled, _ = ndlabel(mask)
+        table = compute_spot_regionprops(labeled, intensity)
+        # Only the far-corner spot survives; the 99.0 (nucleus) spot is gone.
+        assert table["intensity_mean"].size == 1
+        np.testing.assert_allclose(table["intensity_mean"], [50.0])
