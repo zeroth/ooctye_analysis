@@ -702,8 +702,17 @@ class OoctyleAnalysisWidget(QWidget):
             if sphere is not None and show is not None and show.isChecked():
                 self._visualize_region_sphere(key, sphere)
 
-        labeled_mask, n_labels = ndlabel(mask)
-        self.viewer.add_labels(labeled_mask, name=f"{image_name} mask", opacity=0.4)
+        labeled_mask = model_meta.get("labeled_mask")
+        spot_intensity = model_meta.get("spot_intensity")
+        if labeled_mask is None:
+            labeled_mask, n_labels = ndlabel(mask)
+        else:
+            n_labels = model_meta.get("n_labels", int(labeled_mask.max()))
+        mask_layer = self.viewer.add_labels(
+            labeled_mask, name=f"{image_name} mask", opacity=0.4,
+        )
+        if spot_intensity is not None:
+            mask_layer.metadata["spot_intensity"] = spot_intensity
 
         status_parts = [f"Detected {n_total} spots"]
         if n_excluded > 0:

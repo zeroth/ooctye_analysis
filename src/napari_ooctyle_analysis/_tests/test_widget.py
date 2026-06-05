@@ -1037,3 +1037,35 @@ class TestWorkerRegionpropsPipeline:
         # Only the far-corner spot survives; the 99.0 (nucleus) spot is gone.
         assert table["intensity_mean"].size == 1
         np.testing.assert_allclose(table["intensity_mean"], [50.0])
+
+
+class TestDetectionMetadata:
+    def _widget(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        viewer.add_image(np.zeros((2, 8, 8), dtype=np.float32), name="vol")
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._image_combo.setCurrentText("vol")
+        return viewer, widget
+
+    def test_metadata_attached_when_present(self, make_napari_viewer):
+        viewer, widget = self._widget(make_napari_viewer)
+        labeled = np.zeros((2, 8, 8), dtype=np.int32)
+        labeled[0, 1:3, 1:3] = 1
+        table = {"label": np.array([1]), "intensity_mean": np.array([5.0]),
+                 "centroid-0": np.array([0.0]), "centroid-1": np.array([2.0]),
+                 "centroid-2": np.array([2.0]), "area": np.array([4])}
+        meta = {"image_shape": (2, 8, 8), "n_excluded": 0, "mask": labeled,
+                "labeled_mask": labeled, "n_labels": 1, "spot_intensity": table}
+        widget._on_detection_finished(np.zeros((0, 3)), None, meta)
+        layer = viewer.layers["vol mask"]
+        assert "spot_intensity" in layer.metadata
+        assert list(layer.metadata["spot_intensity"]["label"]) == [1]
+
+    def test_fallback_without_metadata(self, make_napari_viewer):
+        viewer, widget = self._widget(make_napari_viewer)
+        mask = np.zeros((2, 8, 8), dtype=np.uint8)
+        mask[0, 1:3, 1:3] = 1
+        meta = {"image_shape": (2, 8, 8), "n_excluded": 0, "mask": mask}
+        widget._on_detection_finished(np.zeros((0, 3)), None, meta)
+        layer = viewer.layers["vol mask"]
+        assert "spot_intensity" not in layer.metadata
