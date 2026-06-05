@@ -1102,6 +1102,42 @@ class TestIntensityHistogramWiring:
         assert widget._charts_layout.count() == 2
         assert "intensity" in widget._overlap_status.text().lower()
 
+    def test_round_trip_real_regionprops_table(self, make_napari_viewer):
+        from napari_ooctyle_analysis._analysis import (
+            compute_spot_regionprops, split_spot_intensities,
+        )
+        viewer = make_napari_viewer()
+        # Build a real labeled B volume + intensity image, then derive the table
+        # exactly as the worker does (compute_spot_regionprops on the labeled mask).
+        label_b = np.zeros((1, 8, 8), dtype=np.int32)
+        label_b[0, 0:2, 0:2] = 1        # overlaps A
+        label_b[0, 6:8, 6:8] = 2        # does not overlap A
+        intensity = np.zeros((1, 8, 8), dtype=np.float32)
+        intensity[0, 0:2, 0:2] = 30.0
+        intensity[0, 6:8, 6:8] = 70.0
+        table = compute_spot_regionprops(label_b, intensity)
+
+        a = np.zeros((1, 8, 8), dtype=np.int32)
+        a[0, 0:2, 0:2] = 1              # A covers only B's label 1
+        viewer.add_labels(a, name="A")
+        b_layer = viewer.add_labels(label_b, name="B")
+        b_layer.metadata["spot_intensity"] = table
+
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._mask_a_combo.setCurrentText("A")
+        widget._mask_b_combo.setCurrentText("B")
+        widget._run_overlap_analysis()
+
+        # Histogram chart was added (stretch + overlap + histogram = 3).
+        assert widget._charts_layout.count() == 3
+        # The real table's labels index the B layer data: label 1 (intensity 30)
+        # overlaps A; label 2 (intensity 70) does not.
+        split = split_spot_intensities(label_b, a, table)
+        assert split["n_overlap"] == 1
+        assert split["n_non_overlap"] == 1
+        np.testing.assert_allclose(sorted(split["overlap"]), [30.0])
+        np.testing.assert_allclose(sorted(split["non_overlap"]), [70.0])
+
 
 class TestSpotTableExport:
     def test_export_combo_lists_labels_layers(self, make_napari_viewer):
