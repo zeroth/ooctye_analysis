@@ -890,7 +890,7 @@ class OoctyleAnalysisWidget(QWidget):
         except KeyError:
             self._export_status.setText(f"Layer not found: {name}")
             return
-        table = getattr(layer, "metadata", {}).get("spot_intensity")
+        table = layer.metadata.get("spot_intensity")
         if table is None:
             self._export_status.setText(
                 f"'{name}' has no per-spot data; it must come from a detection run."
@@ -903,11 +903,15 @@ class OoctyleAnalysisWidget(QWidget):
         if not path:
             return
 
-        header, rows = analysis.spot_table_to_rows(table)
-        with open(path, "w", newline="") as fh:
-            writer = csv.writer(fh)
-            writer.writerow(header)
-            writer.writerows(rows)
+        try:
+            header, rows = analysis.spot_table_to_rows(table)
+            with open(path, "w", newline="") as fh:
+                writer = csv.writer(fh)
+                writer.writerow(header)
+                writer.writerows(rows)
+        except OSError as e:
+            self._export_status.setText(f"Export failed: {e}")
+            return
         self._export_status.setText(f"Exported {len(rows)} spots to {path}")
 
     # ==================================================================

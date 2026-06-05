@@ -1152,3 +1152,26 @@ class TestSpotTableExport:
         widget._export_spot_table_csv()
         assert not out.exists()
         assert "no per-spot" in widget._export_status.text().lower()
+
+    def test_export_handles_write_error(self, tmp_path, monkeypatch, make_napari_viewer):
+        from qtpy.QtWidgets import QFileDialog
+        viewer = make_napari_viewer()
+        layer = viewer.add_labels(np.zeros((1, 4, 4), dtype=np.int32), name="A")
+        layer.metadata["spot_intensity"] = {
+            "label": np.array([1]),
+            "centroid-0": np.array([0.0]),
+            "centroid-1": np.array([1.0]),
+            "centroid-2": np.array([1.0]),
+            "area": np.array([4]),
+            "intensity_mean": np.array([10.0]),
+        }
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._export_combo.setCurrentText("A")
+        bad = tmp_path / "does_not_exist" / "spots.csv"  # parent dir missing -> open() raises
+        monkeypatch.setattr(
+            QFileDialog, "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(bad), "CSV (*.csv)")),
+        )
+        widget._export_spot_table_csv()
+        assert not bad.exists()
+        assert "export failed" in widget._export_status.text().lower()
