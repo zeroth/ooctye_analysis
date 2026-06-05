@@ -118,6 +118,27 @@ def compute_zonal_voxels(
     }
 
 
+SPOT_PROPERTIES = ("label", "centroid", "area", "intensity_mean")
+
+
+def compute_spot_regionprops(label_img: np.ndarray, intensity_img: np.ndarray) -> dict:
+    """Per-spot region properties measured on ``intensity_img``.
+
+    Wraps ``skimage.measure.regionprops_table`` over a labeled image. Background
+    (label 0) is excluded. Returns a dict of equal-length arrays with keys
+    ``label``, ``centroid-0/1/2`` (per image dim), ``area``, ``intensity_mean``.
+    An all-zero label image yields the same keys mapping to empty arrays.
+    """
+    from skimage.measure import regionprops_table
+
+    table = regionprops_table(
+        label_img.astype(np.int32, copy=False),
+        intensity_image=intensity_img,
+        properties=SPOT_PROPERTIES,
+    )
+    return {key: np.asarray(value) for key, value in table.items()}
+
+
 def create_zonal_figure(channel_names: list[str], results: list[dict]):
     """Grouped bar chart: per-channel perinuclear vs rest-of-oocyte voxels."""
     from matplotlib.figure import Figure

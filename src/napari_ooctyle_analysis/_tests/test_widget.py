@@ -901,3 +901,28 @@ class TestZonalChartWiring:
         widget._region_combos["nucleus"].setCurrentText("Nucleus line")
         widget._run_overlap_analysis()
         assert widget._charts_layout.count() == 3
+
+
+class TestComputeSpotRegionprops:
+    def test_intensity_mean_per_label(self):
+        from napari_ooctyle_analysis._analysis import compute_spot_regionprops
+        label_img = np.zeros((4, 4, 4), dtype=np.int32)
+        label_img[0:2, 0:2, 0:2] = 1
+        label_img[2:4, 2:4, 2:4] = 2
+        intensity = np.zeros((4, 4, 4), dtype=np.float32)
+        intensity[0:2, 0:2, 0:2] = 10.0
+        intensity[2:4, 2:4, 2:4] = 20.0
+        table = compute_spot_regionprops(label_img, intensity)
+        assert list(table["label"]) == [1, 2]
+        np.testing.assert_allclose(table["intensity_mean"], [10.0, 20.0])
+        assert list(table["area"]) == [8, 8]
+        # 3D centroids present
+        assert "centroid-0" in table and "centroid-1" in table and "centroid-2" in table
+
+    def test_empty_label_image_yields_empty_table(self):
+        from napari_ooctyle_analysis._analysis import compute_spot_regionprops
+        label_img = np.zeros((3, 3, 3), dtype=np.int32)
+        intensity = np.zeros((3, 3, 3), dtype=np.float32)
+        table = compute_spot_regionprops(label_img, intensity)
+        assert len(table["label"]) == 0
+        assert len(table["intensity_mean"]) == 0

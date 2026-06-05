@@ -30,6 +30,7 @@ classifiers = [
 
 dependencies = [
     "numpy",
+    "scikit-image",
     "spotiflow>=0.6.0",
     "qtpy",
     "matplotlib",
