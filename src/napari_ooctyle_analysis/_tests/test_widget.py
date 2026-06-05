@@ -954,3 +954,23 @@ class TestSplitSpotIntensities:
         split = split_spot_intensities(label_b, mask_a, table)
         assert split["n_overlap"] == 0
         np.testing.assert_allclose(split["non_overlap"], [7.0])
+
+
+class TestIntensityHistogramFigure:
+    def test_two_axes_with_data(self):
+        from napari_ooctyle_analysis._analysis import create_intensity_histogram_figure
+        split = {
+            "overlap": np.array([1.0, 2.0, 2.0, 3.0]),
+            "non_overlap": np.array([4.0, 5.0]),
+            "n_overlap": 4, "n_non_overlap": 2,
+        }
+        fig = create_intensity_histogram_figure("Channel 1 mask", split)
+        assert fig is not None
+        assert len(fig.axes) == 2
+
+    def test_empty_arrays_do_not_crash(self):
+        from napari_ooctyle_analysis._analysis import create_intensity_histogram_figure
+        split = {"overlap": np.array([]), "non_overlap": np.array([]),
+                 "n_overlap": 0, "n_non_overlap": 0}
+        fig = create_intensity_histogram_figure("B", split)
+        assert len(fig.axes) == 2

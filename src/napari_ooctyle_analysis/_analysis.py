@@ -94,6 +94,48 @@ def create_overlap_figure(name_a: str, name_b: str, result: dict):
     return fig
 
 
+def create_intensity_histogram_figure(name_b: str, split: dict):
+    """Two side-by-side histograms of B per-spot mean intensity.
+
+    Left = spots overlapping A, right = non-overlapping spots. Shared x-range and
+    bins computed from the pooled values so the panels are directly comparable.
+    Empty arrays render an empty axes (no crash). Returns a matplotlib Figure.
+    """
+    from matplotlib.figure import Figure
+
+    overlap = np.asarray(split["overlap"], dtype=np.float64)
+    non_overlap = np.asarray(split["non_overlap"], dtype=np.float64)
+    short_b = short_label(name_b)
+
+    fig = Figure(figsize=(6.0, 3.2), dpi=100)
+    fig.suptitle(f"{short_b} per-spot mean intensity", fontsize=10, fontweight="bold")
+
+    pooled = np.concatenate([overlap, non_overlap]) if (overlap.size + non_overlap.size) else np.array([])
+    if pooled.size:
+        lo, hi = float(pooled.min()), float(pooled.max())
+        if hi <= lo:
+            hi = lo + 1.0
+        bins = np.linspace(lo, hi, 21)
+    else:
+        bins = 10
+
+    ax1 = fig.add_subplot(121)
+    if overlap.size:
+        ax1.hist(overlap, bins=bins, color="#4C72B0")
+    ax1.set_title(f"Overlapping A (n={split['n_overlap']})", fontsize=9)
+    ax1.set_xlabel("Mean intensity", fontsize=8)
+    ax1.set_ylabel("Spot count", fontsize=8)
+
+    ax2 = fig.add_subplot(122, sharex=ax1, sharey=ax1)
+    if non_overlap.size:
+        ax2.hist(non_overlap, bins=bins, color="#DD8452")
+    ax2.set_title(f"Non-overlapping (n={split['n_non_overlap']})", fontsize=9)
+    ax2.set_xlabel("Mean intensity", fontsize=8)
+
+    fig.subplots_adjust(bottom=0.18, top=0.82, wspace=0.3)
+    return fig
+
+
 def compute_zonal_voxels(
     channel_mask: np.ndarray,
     oocyte_mask: np.ndarray,
