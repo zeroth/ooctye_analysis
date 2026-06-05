@@ -12,6 +12,7 @@ def compute_overlap(
     bool_a = mask_a > 0
     bool_b = mask_b > 0
     overlap = bool_a & bool_b
+    non_overlap = bool_a & ~bool_b  # A \ B: voxels in A not overlapping B
 
     n_a = int(bool_a.sum())
     n_b = int(bool_b.sum())
@@ -24,6 +25,8 @@ def compute_overlap(
         "pct_a": (n_overlap / n_a * 100) if n_a > 0 else 0.0,
         "pct_b": (n_overlap / n_b * 100) if n_b > 0 else 0.0,
         "overlap_mask": overlap.astype(np.uint8),
+        "n_non_overlap": int(non_overlap.sum()),
+        "non_overlap_mask": non_overlap.astype(np.uint8),
     }
 
 

@@ -450,6 +450,18 @@ class TestComputeOverlap:
         assert abs(result["pct_a"] - 200 / 600 * 100) < 0.1
         assert abs(result["pct_b"] - 200 / 600 * 100) < 0.1
 
+    def test_non_overlap_mask_is_a_minus_b(self):
+        """non_overlap_mask = A & ~B; n_non_overlap = n_a - n_overlap."""
+        mask_a = np.zeros((10, 10, 10), dtype=np.uint8)
+        mask_b = np.zeros((10, 10, 10), dtype=np.uint8)
+        mask_a[:6] = 1  # 600 voxels
+        mask_b[4:] = 1  # overlap is slices 4-5 -> 200 voxels
+        result = compute_overlap(mask_a, mask_b)
+        assert result["n_non_overlap"] == 400  # 600 - 200
+        expected = ((mask_a > 0) & ~(mask_b > 0)).astype(np.uint8)
+        np.testing.assert_array_equal(result["non_overlap_mask"], expected)
+        assert int(result["non_overlap_mask"].sum()) == 400
+
 
 def test_analysis_tab_has_overlap_controls(make_napari_viewer):
     """Analysis tab has the expected overlap UI widgets."""
@@ -504,6 +516,48 @@ def test_overlap_end_to_end(make_napari_viewer):
     assert "800" in widget._overlap_status.text()
     # A chart was added (layout has stretch + 1 chart = 2 items)
     assert widget._charts_layout.count() == 2
+
+
+def test_overlap_adds_overlap_and_non_overlap_layers(make_napari_viewer):
+    """With the mask-layer checkbox on, both overlap and A\\B layers are added."""
+    viewer = make_napari_viewer()
+    mask_a = np.zeros((10, 20, 20), dtype=np.uint8)
+    mask_b = np.zeros((10, 20, 20), dtype=np.uint8)
+    mask_a[:6] = 1
+    mask_b[4:] = 1
+    viewer.add_labels(mask_a, name="Mask A")
+    viewer.add_labels(mask_b, name="Mask B")
+
+    widget = OoctyleAnalysisWidget(viewer)
+    widget._mask_a_combo.setCurrentText("Mask A")
+    widget._mask_b_combo.setCurrentText("Mask B")
+    widget._show_overlap_layer.setChecked(True)
+    widget._run_overlap_analysis()
+
+    names = [l.name for l in viewer.layers]
+    assert "Mask A & Mask B Overlap Mask" in names
+    assert "Mask A \\ Mask B Non-overlap Mask" in names
+
+
+def test_no_mask_layers_when_checkbox_off(make_napari_viewer):
+    """With the checkbox off, neither overlap nor non-overlap layer is added."""
+    viewer = make_napari_viewer()
+    mask_a = np.zeros((10, 20, 20), dtype=np.uint8)
+    mask_b = np.zeros((10, 20, 20), dtype=np.uint8)
+    mask_a[:6] = 1
+    mask_b[4:] = 1
+    viewer.add_labels(mask_a, name="Mask A")
+    viewer.add_labels(mask_b, name="Mask B")
+
+    widget = OoctyleAnalysisWidget(viewer)
+    widget._mask_a_combo.setCurrentText("Mask A")
+    widget._mask_b_combo.setCurrentText("Mask B")
+    widget._show_overlap_layer.setChecked(False)
+    widget._run_overlap_analysis()
+
+    names = [l.name for l in viewer.layers]
+    assert "Mask A & Mask B Overlap Mask" not in names
+    assert "Mask A \\ Mask B Non-overlap Mask" not in names
 
 
 def test_overlap_charts_accumulate(make_napari_viewer):

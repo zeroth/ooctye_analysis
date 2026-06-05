@@ -131,7 +131,7 @@ class OoctyleAnalysisWidget(QWidget):
         row.addWidget(self._mask_b_combo)
         ctrl_layout.addLayout(row)
 
-        self._show_overlap_layer = QCheckBox("Show overlap mask layer")
+        self._show_overlap_layer = QCheckBox("Show overlap & non-overlap mask layers")
         self._show_overlap_layer.setChecked(True)
         ctrl_layout.addWidget(self._show_overlap_layer)
 
@@ -805,14 +805,23 @@ class OoctyleAnalysisWidget(QWidget):
         result = analysis.compute_overlap(mask_a, mask_b)
         self._add_overlap_chart(name_a, name_b, result)
 
-        if self._show_overlap_layer.isChecked() and result["n_overlap"] > 0:
-            layer_name = f"{name_a} & {name_b} Overlap Mask"
-            for layer in list(self.viewer.layers):
-                if layer.name == layer_name:
-                    self.viewer.layers.remove(layer)
-            self.viewer.add_labels(
-                result["overlap_mask"], name=layer_name, opacity=0.5,
-            )
+        if self._show_overlap_layer.isChecked():
+            if result["n_overlap"] > 0:
+                overlap_name = f"{name_a} & {name_b} Overlap Mask"
+                for layer in list(self.viewer.layers):
+                    if layer.name == overlap_name:
+                        self.viewer.layers.remove(layer)
+                self.viewer.add_labels(
+                    result["overlap_mask"], name=overlap_name, opacity=0.5,
+                )
+            if result["n_non_overlap"] > 0:
+                non_overlap_name = f"{name_a} \\ {name_b} Non-overlap Mask"
+                for layer in list(self.viewer.layers):
+                    if layer.name == non_overlap_name:
+                        self.viewer.layers.remove(layer)
+                self.viewer.add_labels(
+                    result["non_overlap_mask"], name=non_overlap_name, opacity=0.5,
+                )
 
         self._overlap_status.setText(
             f"{name_a} vs {name_b}: "
