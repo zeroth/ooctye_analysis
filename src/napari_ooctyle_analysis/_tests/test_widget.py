@@ -1101,3 +1101,54 @@ class TestIntensityHistogramWiring:
         # stretch (1) + overlap chart (1) only
         assert widget._charts_layout.count() == 2
         assert "intensity" in widget._overlap_status.text().lower()
+
+
+class TestSpotTableExport:
+    def test_export_combo_lists_labels_layers(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        viewer.add_labels(np.zeros((1, 4, 4), dtype=np.int32), name="A")
+        viewer.add_image(np.zeros((1, 4, 4), dtype=np.float32), name="img")
+        widget = OoctyleAnalysisWidget(viewer)
+        items = [widget._export_combo.itemText(i) for i in range(widget._export_combo.count())]
+        assert "A" in items
+        assert "img" not in items
+
+    def test_export_writes_csv(self, tmp_path, monkeypatch, make_napari_viewer):
+        from qtpy.QtWidgets import QFileDialog
+        viewer = make_napari_viewer()
+        layer = viewer.add_labels(np.zeros((1, 4, 4), dtype=np.int32), name="A")
+        layer.metadata["spot_intensity"] = {
+            "label": np.array([1, 2]),
+            "centroid-0": np.array([0.0, 0.0]),
+            "centroid-1": np.array([1.0, 3.0]),
+            "centroid-2": np.array([1.0, 3.0]),
+            "area": np.array([4, 4]),
+            "intensity_mean": np.array([10.0, 20.0]),
+        }
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._export_combo.setCurrentText("A")
+        out = tmp_path / "spots.csv"
+        monkeypatch.setattr(
+            QFileDialog, "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(out), "CSV (*.csv)")),
+        )
+        widget._export_spot_table_csv()
+        assert out.exists()
+        lines = out.read_text().strip().splitlines()
+        assert lines[0].split(",")[0] == "label"
+        assert len(lines) == 3  # header + 2 spots
+
+    def test_export_without_metadata_writes_nothing(self, tmp_path, monkeypatch, make_napari_viewer):
+        from qtpy.QtWidgets import QFileDialog
+        viewer = make_napari_viewer()
+        viewer.add_labels(np.zeros((1, 4, 4), dtype=np.int32), name="A")
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._export_combo.setCurrentText("A")
+        out = tmp_path / "nope.csv"
+        monkeypatch.setattr(
+            QFileDialog, "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(out), "CSV (*.csv)")),
+        )
+        widget._export_spot_table_csv()
+        assert not out.exists()
+        assert "no per-spot" in widget._export_status.text().lower()

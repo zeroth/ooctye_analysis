@@ -71,6 +71,7 @@ class OoctyleAnalysisWidget(QWidget):
         }
         self._mask_a_combo = QComboBox()
         self._mask_b_combo = QComboBox()
+        self._export_combo = QComboBox()
 
         # Tab container
         self.tabs = QTabWidget()
@@ -78,6 +79,24 @@ class OoctyleAnalysisWidget(QWidget):
 
         self.tabs.addTab(self._build_segmentation_tab(), "Segmentation")
         self.tabs.addTab(self._build_analysis_tab(), "Analysis")
+
+        # Top-level spot-table CSV export (available regardless of active tab).
+        export_group = QGroupBox("Export spot table")
+        export_layout = QHBoxLayout()
+        export_group.setLayout(export_layout)
+        export_layout.addWidget(QLabel("Layer:"))
+        export_layout.addWidget(self._export_combo)
+        export_refresh = QPushButton("↻")
+        export_refresh.setFixedWidth(28)
+        export_refresh.setToolTip("Refresh layer list")
+        export_refresh.clicked.connect(self._refresh_image_layers)
+        export_layout.addWidget(export_refresh)
+        export_btn = QPushButton("Export CSV…")
+        export_btn.clicked.connect(self._export_spot_table_csv)
+        export_layout.addWidget(export_btn)
+        self._export_status = QLabel("")
+        layout.addWidget(export_group)
+        layout.addWidget(self._export_status)
 
         # Internal state
         self._model = None
@@ -420,6 +439,7 @@ class OoctyleAnalysisWidget(QWidget):
     def _refresh_image_layers(self, event=None):
         all_combos = [
             self._image_combo, self._mask_a_combo, self._mask_b_combo,
+            self._export_combo,
             *self._region_combos.values(),
         ]
         prev = {combo: combo.currentText() for combo in all_combos}
@@ -435,6 +455,7 @@ class OoctyleAnalysisWidget(QWidget):
             elif isinstance(layer, napari.layers.Labels):
                 self._mask_a_combo.addItem(layer.name)
                 self._mask_b_combo.addItem(layer.name)
+                self._export_combo.addItem(layer.name)
 
         for combo, text in prev.items():
             idx = combo.findText(text)
@@ -850,6 +871,44 @@ class OoctyleAnalysisWidget(QWidget):
         canvas.setMinimumHeight(260)
         count = self._charts_layout.count()
         self._charts_layout.insertWidget(count - 1, canvas)
+
+    def _export_spot_table_csv(self) -> None:
+        """Write the selected layer's per-spot regionprops table to CSV.
+
+        The table was computed on the nucleus-clipped mask, so nucleus spots are
+        absent by construction.
+        """
+        import csv
+        from qtpy.QtWidgets import QFileDialog
+
+        name = self._export_combo.currentText()
+        if not name:
+            self._export_status.setText("No layer selected to export.")
+            return
+        try:
+            layer = self.viewer.layers[name]
+        except KeyError:
+            self._export_status.setText(f"Layer not found: {name}")
+            return
+        table = getattr(layer, "metadata", {}).get("spot_intensity")
+        if table is None:
+            self._export_status.setText(
+                f"'{name}' has no per-spot data; it must come from a detection run."
+            )
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export spot table", f"{name}.csv", "CSV (*.csv)"
+        )
+        if not path:
+            return
+
+        header, rows = analysis.spot_table_to_rows(table)
+        with open(path, "w", newline="") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(header)
+            writer.writerows(rows)
+        self._export_status.setText(f"Exported {len(rows)} spots to {path}")
 
     # ==================================================================
     # Fine-tuning
