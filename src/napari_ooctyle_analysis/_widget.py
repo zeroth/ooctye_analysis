@@ -704,6 +704,7 @@ class OoctyleAnalysisWidget(QWidget):
 
         labeled_mask = model_meta.get("labeled_mask")
         spot_intensity = model_meta.get("spot_intensity")
+        # Fallback for legacy/external model_meta without worker-side labeling.
         if labeled_mask is None:
             labeled_mask, n_labels = ndlabel(mask)
         else:

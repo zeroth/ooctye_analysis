@@ -91,6 +91,7 @@ class PredictWorker(QThread):
             from scipy.ndimage import label as ndlabel
             from napari_ooctyle_analysis._analysis import compute_spot_regionprops
 
+            # Label AFTER clipping so nucleus/outside-oocyte voxels are excluded from the table.
             self.progress.emit("Measuring spot intensities", 0, 0)
             labeled_mask, n_labels = ndlabel(mask)
             spot_intensity = compute_spot_regionprops(labeled_mask, img_for_fit)
