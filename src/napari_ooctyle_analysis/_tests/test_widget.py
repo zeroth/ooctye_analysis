@@ -559,7 +559,7 @@ class TestRegionWidgets:
         "nucleus": "Nucleus line",
     }
 
-    def test_three_combos_exist(self, make_napari_viewer):
+    def test_region_combos_exist(self, make_napari_viewer):
         viewer = make_napari_viewer()
         widget = OoctyleAnalysisWidget(viewer)
         for key in self.REGION_KEYS:
@@ -632,6 +632,27 @@ class TestRegionWidgets:
         assert s is not None
         np.testing.assert_allclose(s.center_px, [10.0, 0.0, 10.0])
         assert abs(s.radius_physical - 10.0) < 1e-6
+
+    def test_fraction_spinbox_drives_perinuclear_radius(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        widget = OoctyleAnalysisWidget(viewer)
+        # Oocyte radius 20, nucleus radius 10, shared center [5,5,20], unit scale.
+        viewer.add_shapes(
+            [np.array([[5.0, 5.0, 0.0], [5.0, 5.0, 40.0]])],
+            shape_type="line", name="Oocyte line",
+        )
+        viewer.add_shapes(
+            [np.array([[5.0, 5.0, 10.0], [5.0, 5.0, 30.0]])],
+            shape_type="line", name="Nucleus line",
+        )
+        widget._refresh_image_layers()
+        widget._region_combos["oocyte"].setCurrentText("Oocyte line")
+        widget._region_combos["nucleus"].setCurrentText("Nucleus line")
+        widget._peri_fraction.setValue(60.0)
+        spheres = widget._get_all_region_spheres(ndim=3)
+        # R_p = 10 + 0.6*(20-10) = 16
+        assert spheres["perinuclear"] is not None
+        assert abs(spheres["perinuclear"].radius_physical - 16.0) < 1e-6
 
 
 # ------------------------------------------------------------------

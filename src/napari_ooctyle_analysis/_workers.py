@@ -61,7 +61,7 @@ class PredictWorker(QThread):
                 self.progress.emit("Clipping to oocyte", 0, 0)
                 spots = filter_spots(spots, oocyte, keep="inside")
             if nucleus is not None and len(spots) > 0:
-                self.progress.emit("Filtering nucleus region", 0, 0)
+                self.progress.emit("Excluding nucleus region", 0, 0)
                 spots = filter_spots(spots, nucleus, keep="outside")
             n_excluded = n_before - len(spots)
 
