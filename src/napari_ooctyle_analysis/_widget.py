@@ -797,13 +797,10 @@ class OoctyleAnalysisWidget(QWidget):
         peri = spheres["perinuclear"]
         if oocyte is None or peri is None:
             return
-        nucleus = spheres["nucleus"]
+        # peri is non-None only when both nucleus and oocyte exist, so nucleus is set here.
         oocyte_mask = regions.sphere_to_mask(oocyte, mask_a.shape)
         peri_mask = regions.sphere_to_mask(peri, mask_a.shape)
-        if nucleus is not None:
-            nucleus_mask = regions.sphere_to_mask(nucleus, mask_a.shape)
-        else:
-            nucleus_mask = np.zeros(mask_a.shape, dtype=bool)
+        nucleus_mask = regions.sphere_to_mask(spheres["nucleus"], mask_a.shape)
 
         result_a = analysis.compute_zonal_voxels(mask_a, oocyte_mask, peri_mask, nucleus_mask)
         result_b = analysis.compute_zonal_voxels(mask_b, oocyte_mask, peri_mask, nucleus_mask)

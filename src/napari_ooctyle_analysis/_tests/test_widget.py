@@ -762,8 +762,8 @@ class TestOocyteClipping:
         widget._region_combos["nucleus"].setCurrentText("Nucleus line")
 
         fake_spots = np.array([
-            [10.0, 20.0, 25.0],  # inside oocyte, outside exclude
-            [10.0, 20.0, 20.0],  # inside exclude
+            [10.0, 20.0, 25.0],  # inside oocyte, outside nucleus
+            [10.0, 20.0, 20.0],  # inside nucleus
             [0.0, 0.0, 0.0],     # outside oocyte
         ], dtype=np.float64)
         fake_mask = np.ones_like(img, dtype=np.uint8)
@@ -814,7 +814,7 @@ class TestComputeZonalVoxels:
         channel = np.ones(shape, dtype=np.uint8)
 
         result = compute_zonal_voxels(channel, oocyte, peri, excl)
-        # Perinuclear minus exclude: 4^3 - 2^3 = 56
+        # Perinuclear minus nucleus: 4^3 - 2^3 = 56
         # Rest of oocyte (oocyte minus peri): 10^3 - 4^3 = 936
         assert result["n_perinuclear"] == 56
         assert result["n_rest_oocyte"] == 936
