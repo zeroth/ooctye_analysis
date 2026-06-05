@@ -63,6 +63,22 @@ def contains_sphere(outer: Sphere, inner: Sphere) -> bool:
     return distance_physical + inner.radius_physical <= outer.radius_physical + 1e-9
 
 
+def compute_perinuclear(nucleus: Sphere, oocyte: Sphere, frac: float) -> Sphere:
+    """Perinuclear shell sphere: centered on the nucleus, radius a fraction of the gap.
+
+    R_p = R_n + frac * (R_o - R_n), where R_n / R_o are the nucleus / oocyte radii.
+    `frac` is expected in [0, 1]; the caller (widget) supplies a validated value.
+    """
+    r_p = nucleus.radius_physical + frac * (
+        oocyte.radius_physical - nucleus.radius_physical
+    )
+    return Sphere(
+        center_px=nucleus.center_px,
+        radius_physical=r_p,
+        scale=nucleus.scale,
+    )
+
+
 def _distance_sq_physical(
     shape: tuple[int, ...],
     center_px: np.ndarray,

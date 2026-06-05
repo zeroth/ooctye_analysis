@@ -6,6 +6,7 @@ from unittest.mock import patch
 from datetime import date
 
 from napari_ooctyle_analysis._widget import OoctyleAnalysisWidget
+from napari_ooctyle_analysis._regions import Sphere, compute_perinuclear
 from napari_ooctyle_analysis._segmentation import (
     reorder_to_zyx,
     filter_spots_by_sphere,
@@ -632,6 +633,47 @@ class TestRegionWidgets:
         assert s is not None
         np.testing.assert_allclose(s.center_px, [10.0, 0.0, 10.0])
         assert abs(s.radius_physical - 10.0) < 1e-6
+
+
+# ------------------------------------------------------------------
+# compute_perinuclear tests
+# ------------------------------------------------------------------
+
+
+class TestComputePerinuclear:
+    def _sphere(self, center, radius):
+        return Sphere(
+            center_px=np.array(center, dtype=np.float64),
+            radius_physical=float(radius),
+            scale=np.array([1.0, 1.0, 1.0]),
+        )
+
+    def test_forty_percent_midpoint(self):
+        nucleus = self._sphere([50, 50, 50], 10.0)
+        oocyte = self._sphere([50, 50, 50], 20.0)
+        peri = compute_perinuclear(nucleus, oocyte, 0.40)
+        # R_p = 10 + 0.4*(20-10) = 14
+        assert abs(peri.radius_physical - 14.0) < 1e-9
+
+    def test_frac_zero_equals_nucleus_radius(self):
+        nucleus = self._sphere([0, 0, 0], 7.0)
+        oocyte = self._sphere([0, 0, 0], 30.0)
+        peri = compute_perinuclear(nucleus, oocyte, 0.0)
+        assert abs(peri.radius_physical - 7.0) < 1e-9
+
+    def test_frac_one_equals_oocyte_radius(self):
+        nucleus = self._sphere([0, 0, 0], 7.0)
+        oocyte = self._sphere([0, 0, 0], 30.0)
+        peri = compute_perinuclear(nucleus, oocyte, 1.0)
+        assert abs(peri.radius_physical - 30.0) < 1e-9
+
+    def test_centered_on_nucleus_even_when_offset(self):
+        nucleus = self._sphere([10, 20, 30], 5.0)
+        oocyte = self._sphere([0, 0, 0], 25.0)
+        peri = compute_perinuclear(nucleus, oocyte, 0.5)
+        np.testing.assert_allclose(peri.center_px, [10, 20, 30])
+        # R_p = 5 + 0.5*(25-5) = 15
+        assert abs(peri.radius_physical - 15.0) < 1e-9
 
 
 # ------------------------------------------------------------------
