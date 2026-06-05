@@ -1069,3 +1069,35 @@ class TestDetectionMetadata:
         widget._on_detection_finished(np.zeros((0, 3)), None, meta)
         layer = viewer.layers["vol mask"]
         assert "spot_intensity" not in layer.metadata
+
+
+class TestIntensityHistogramWiring:
+    def _setup(self, make_napari_viewer, with_meta):
+        viewer = make_napari_viewer()
+        # A mask: label 1 in top-left. B mask: label 1 top-left (overlaps A),
+        # label 2 bottom-right (no overlap).
+        a = np.zeros((1, 8, 8), dtype=np.int32); a[0, 0:2, 0:2] = 1
+        b = np.zeros((1, 8, 8), dtype=np.int32); b[0, 0:2, 0:2] = 1; b[0, 6:8, 6:8] = 2
+        viewer.add_labels(a, name="A")
+        b_layer = viewer.add_labels(b, name="B")
+        if with_meta:
+            b_layer.metadata["spot_intensity"] = {
+                "label": np.array([1, 2]), "intensity_mean": np.array([10.0, 20.0]),
+            }
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._mask_a_combo.setCurrentText("A")
+        widget._mask_b_combo.setCurrentText("B")
+        return widget
+
+    def test_histogram_added_when_b_has_metadata(self, make_napari_viewer):
+        widget = self._setup(make_napari_viewer, with_meta=True)
+        widget._run_overlap_analysis()
+        # stretch (1) + overlap chart (1) + intensity histogram (1) = 3
+        assert widget._charts_layout.count() == 3
+
+    def test_no_histogram_without_metadata(self, make_napari_viewer):
+        widget = self._setup(make_napari_viewer, with_meta=False)
+        widget._run_overlap_analysis()
+        # stretch (1) + overlap chart (1) only
+        assert widget._charts_layout.count() == 2
+        assert "intensity" in widget._overlap_status.text().lower()

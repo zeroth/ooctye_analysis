@@ -800,6 +800,7 @@ class OoctyleAnalysisWidget(QWidget):
         )
 
         self._maybe_add_zonal_chart(mask_a, mask_b, name_a, name_b)
+        self._maybe_add_intensity_histogram(mask_a, mask_b, name_b)
 
     def _maybe_add_zonal_chart(self, mask_a, mask_b, name_a: str, name_b: str) -> None:
         spheres = self._get_all_region_spheres(ndim=mask_a.ndim)
@@ -819,6 +820,34 @@ class OoctyleAnalysisWidget(QWidget):
         fig = analysis.create_zonal_figure([name_a, name_b], [result_a, result_b])
         canvas = FigureCanvasQTAgg(fig)
         canvas.setMinimumHeight(280)
+        count = self._charts_layout.count()
+        self._charts_layout.insertWidget(count - 1, canvas)
+
+    def _maybe_add_intensity_histogram(self, mask_a, mask_b, name_b: str) -> None:
+        """Histogram of Channel B per-spot mean intensity, split by overlap with A.
+
+        Requires the Channel B layer to carry per-spot intensity metadata from a
+        detection run; otherwise the histogram is skipped with a status hint.
+        """
+        try:
+            b_layer = self.viewer.layers[name_b]
+        except KeyError:
+            return
+        table = b_layer.metadata.get("spot_intensity")
+        if table is None:
+            self._overlap_status.setText(
+                self._overlap_status.text()
+                + "  (Channel B has no per-spot intensity data — "
+                "re-run detection on Channel B to enable intensity histograms.)"
+            )
+            return
+
+        split = analysis.split_spot_intensities(mask_b, mask_a, table)
+
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        fig = analysis.create_intensity_histogram_figure(name_b, split)
+        canvas = FigureCanvasQTAgg(fig)
+        canvas.setMinimumHeight(260)
         count = self._charts_layout.count()
         self._charts_layout.insertWidget(count - 1, canvas)
 
