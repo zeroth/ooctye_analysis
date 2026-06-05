@@ -641,11 +641,11 @@ class TestRegionWidgets:
 
 
 class TestComputePerinuclear:
-    def _sphere(self, center, radius):
+    def _sphere(self, center, radius, scale=(1.0, 1.0, 1.0)):
         return Sphere(
             center_px=np.array(center, dtype=np.float64),
             radius_physical=float(radius),
-            scale=np.array([1.0, 1.0, 1.0]),
+            scale=np.array(scale, dtype=np.float64),
         )
 
     def test_forty_percent_midpoint(self):
@@ -674,6 +674,12 @@ class TestComputePerinuclear:
         np.testing.assert_allclose(peri.center_px, [10, 20, 30])
         # R_p = 5 + 0.5*(25-5) = 15
         assert abs(peri.radius_physical - 15.0) < 1e-9
+
+    def test_inherits_nucleus_scale(self):
+        nucleus = self._sphere([0, 0, 0], 10.0, scale=(2.0, 1.0, 0.5))
+        oocyte = self._sphere([0, 0, 0], 20.0)
+        peri = compute_perinuclear(nucleus, oocyte, 0.4)
+        np.testing.assert_allclose(peri.scale, [2.0, 1.0, 0.5])
 
 
 # ------------------------------------------------------------------

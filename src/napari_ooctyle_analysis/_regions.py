@@ -67,7 +67,9 @@ def compute_perinuclear(nucleus: Sphere, oocyte: Sphere, frac: float) -> Sphere:
     """Perinuclear shell sphere: centered on the nucleus, radius a fraction of the gap.
 
     R_p = R_n + frac * (R_o - R_n), where R_n / R_o are the nucleus / oocyte radii.
-    `frac` is expected in [0, 1]; the caller (widget) supplies a validated value.
+    Both spheres are assumed to share the same scale (built from the same image); the
+    returned sphere inherits the nucleus center and scale. `frac` is expected in [0, 1];
+    the caller (widget) supplies a validated value.
     """
     r_p = nucleus.radius_physical + frac * (
         oocyte.radius_physical - nucleus.radius_physical
