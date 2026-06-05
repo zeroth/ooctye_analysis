@@ -110,7 +110,7 @@ def create_intensity_histogram_figure(name_b: str, split: dict):
     fig = Figure(figsize=(6.0, 3.2), dpi=100)
     fig.suptitle(f"{short_b} per-spot mean intensity", fontsize=10, fontweight="bold")
 
-    pooled = np.concatenate([overlap, non_overlap]) if (overlap.size + non_overlap.size) else np.array([])
+    pooled = np.concatenate([overlap, non_overlap])
     if pooled.size:
         lo, hi = float(pooled.min()), float(pooled.max())
         if hi <= lo:

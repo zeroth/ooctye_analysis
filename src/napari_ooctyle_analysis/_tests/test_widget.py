@@ -975,6 +975,16 @@ class TestIntensityHistogramFigure:
         fig = create_intensity_histogram_figure("B", split)
         assert len(fig.axes) == 2
 
+    def test_all_equal_values_do_not_crash(self):
+        from napari_ooctyle_analysis._analysis import create_intensity_histogram_figure
+        split = {
+            "overlap": np.array([7.0, 7.0, 7.0]),
+            "non_overlap": np.array([7.0]),
+            "n_overlap": 3, "n_non_overlap": 1,
+        }
+        fig = create_intensity_histogram_figure("B", split)
+        assert len(fig.axes) == 2
+
 
 class TestSpotTableToRows:
     def test_header_order_and_rows(self):
