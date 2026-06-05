@@ -974,3 +974,30 @@ class TestIntensityHistogramFigure:
                  "n_overlap": 0, "n_non_overlap": 0}
         fig = create_intensity_histogram_figure("B", split)
         assert len(fig.axes) == 2
+
+
+class TestSpotTableToRows:
+    def test_header_order_and_rows(self):
+        from napari_ooctyle_analysis._analysis import spot_table_to_rows
+        table = {
+            "label": np.array([1, 2]),
+            "centroid-0": np.array([0.5, 2.5]),
+            "centroid-1": np.array([0.5, 2.5]),
+            "centroid-2": np.array([0.5, 2.5]),
+            "area": np.array([8, 8]),
+            "intensity_mean": np.array([10.0, 20.0]),
+        }
+        header, rows = spot_table_to_rows(table)
+        assert header == ["label", "centroid-0", "centroid-1", "centroid-2", "area", "intensity_mean"]
+        assert len(rows) == 2
+        assert rows[0][0] == 1
+        assert rows[1][5] == 20.0
+
+    def test_empty_table_has_header_no_rows(self):
+        from napari_ooctyle_analysis._analysis import spot_table_to_rows
+        table = {"label": np.array([]), "centroid-0": np.array([]),
+                 "centroid-1": np.array([]), "centroid-2": np.array([]),
+                 "area": np.array([]), "intensity_mean": np.array([])}
+        header, rows = spot_table_to_rows(table)
+        assert header[0] == "label"
+        assert rows == []

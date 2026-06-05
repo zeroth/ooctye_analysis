@@ -206,6 +206,26 @@ def split_spot_intensities(
     }
 
 
+_SPOT_TABLE_COLUMN_ORDER = (
+    "label", "centroid-0", "centroid-1", "centroid-2", "area", "intensity_mean",
+)
+
+
+def spot_table_to_rows(table: dict) -> tuple[list, list]:
+    """Convert a regionprops table dict into (header, rows) for CSV writing.
+
+    Columns follow ``_SPOT_TABLE_COLUMN_ORDER``, keeping only keys present in the
+    table (any extra keys are appended after, in sorted order). ``rows`` is the
+    column-wise zip; an empty table yields the header and an empty row list.
+    """
+    ordered = [c for c in _SPOT_TABLE_COLUMN_ORDER if c in table]
+    extra = sorted(k for k in table if k not in ordered)
+    header = ordered + extra
+    columns = [np.asarray(table[h]).tolist() for h in header]
+    rows = [list(r) for r in zip(*columns)] if columns and len(columns[0]) else []
+    return header, rows
+
+
 def create_zonal_figure(channel_names: list[str], results: list[dict]):
     """Grouped bar chart: per-channel perinuclear vs rest-of-oocyte voxels."""
     from matplotlib.figure import Figure
