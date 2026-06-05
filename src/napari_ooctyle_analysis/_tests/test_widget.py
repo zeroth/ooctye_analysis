@@ -553,11 +553,10 @@ def test_clear_charts(make_napari_viewer):
 
 
 class TestRegionWidgets:
-    REGION_KEYS = ("oocyte", "perinuclear", "exclude")
+    REGION_KEYS = ("oocyte", "nucleus")
     LAYER_NAMES = {
         "oocyte": "Oocyte line",
-        "perinuclear": "Perinuclear line",
-        "exclude": "Exclusion line",
+        "nucleus": "Nucleus line",
     }
 
     def test_three_combos_exist(self, make_napari_viewer):
@@ -590,11 +589,11 @@ class TestRegionWidgets:
         viewer.add_shapes(
             [np.array([[5.0, 0.0, 0.0], [5.0, 0.0, 20.0]])],
             shape_type="line",
-            name="Exclusion line",
+            name="Nucleus line",
         )
         widget._refresh_image_layers()
-        widget._region_combos["exclude"].setCurrentText("Exclusion line")
-        s = widget._get_region_sphere("exclude", ndim=3)
+        widget._region_combos["nucleus"].setCurrentText("Nucleus line")
+        s = widget._get_region_sphere("nucleus", ndim=3)
         assert s is not None
         np.testing.assert_allclose(s.center_px, [5.0, 0.0, 10.0])
         assert abs(s.radius_physical - 10.0) < 1e-6
@@ -605,14 +604,14 @@ class TestRegionWidgets:
         viewer.add_shapes(
             [np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 20.0]])],
             shape_type="line",
-            name="Exclusion line",
+            name="Nucleus line",
         )
         widget._refresh_image_layers()
-        widget._region_combos["exclude"].setCurrentText("Exclusion line")
+        widget._region_combos["nucleus"].setCurrentText("Nucleus line")
         widget._scale_x.setValue(0.5)
         widget._scale_y.setValue(1.0)
         widget._scale_z.setValue(2.0)
-        s = widget._get_region_sphere("exclude", ndim=3)
+        s = widget._get_region_sphere("nucleus", ndim=3)
         assert s is not None
         assert abs(s.radius_physical - 5.0) < 1e-6
         np.testing.assert_allclose(s.scale, [2.0, 1.0, 0.5])
@@ -625,11 +624,11 @@ class TestRegionWidgets:
         viewer.add_shapes(
             [np.array([[0.0, 0.0], [0.0, 20.0]])],
             shape_type="line",
-            name="Exclusion line",
+            name="Nucleus line",
         )
         widget._refresh_image_layers()
-        widget._region_combos["exclude"].setCurrentText("Exclusion line")
-        s = widget._get_region_sphere("exclude", ndim=3)
+        widget._region_combos["nucleus"].setCurrentText("Nucleus line")
+        s = widget._get_region_sphere("nucleus", ndim=3)
         assert s is not None
         np.testing.assert_allclose(s.center_px, [10.0, 0.0, 10.0])
         assert abs(s.radius_physical - 10.0) < 1e-6
@@ -693,56 +692,51 @@ class TestContainmentValidation:
             [np.array([p1, p2])], shape_type="line", name=name,
         )
 
-    def test_no_warning_when_nested(self, make_napari_viewer):
+    def test_no_warning_when_nucleus_inside_oocyte(self, make_napari_viewer):
         viewer = make_napari_viewer()
         widget = OoctyleAnalysisWidget(viewer)
-        # All three regions share the same center (50, 50, 50) at unit scale.
-        # Oocyte radius=50, Perinuclear radius=20, Exclusion radius=5.
-        # Containment: 0+20<=50 ✓, 0+5<=20 ✓, 0+5<=50 ✓  → no warnings.
-        self._add_line(viewer, "Oocyte line",      [50, 50, 0],  [50, 50, 100])
-        self._add_line(viewer, "Perinuclear line", [50, 50, 30], [50, 50, 70])
-        self._add_line(viewer, "Exclusion line",   [50, 50, 45], [50, 50, 55])
+        # Oocyte radius=50, Nucleus radius=5, shared center → nucleus well inside.
+        self._add_line(viewer, "Oocyte line",  [50, 50, 0],  [50, 50, 100])
+        self._add_line(viewer, "Nucleus line", [50, 50, 45], [50, 50, 55])
         widget._refresh_image_layers()
-        for key, name in [("oocyte", "Oocyte line"),
-                          ("perinuclear", "Perinuclear line"),
-                          ("exclude", "Exclusion line")]:
-            widget._region_combos[key].setCurrentText(name)
+        widget._region_combos["oocyte"].setCurrentText("Oocyte line")
+        widget._region_combos["nucleus"].setCurrentText("Nucleus line")
         widget._update_containment_status()
         assert widget._region_status.text() == ""
 
-    def test_warning_when_exclude_outside_perinuclear(self, make_napari_viewer):
+    def test_warning_when_nucleus_outside_oocyte(self, make_napari_viewer):
         viewer = make_napari_viewer()
         widget = OoctyleAnalysisWidget(viewer)
-        self._add_line(viewer, "Oocyte line",      [50, 0, 0], [50, 0, 200])
-        self._add_line(viewer, "Perinuclear line", [50, 50, 40], [50, 50, 60])
-        self._add_line(viewer, "Exclusion line",   [50, 50, 100], [50, 50, 110])
-        widget._refresh_image_layers()
-        for key, name in [("oocyte", "Oocyte line"),
-                          ("perinuclear", "Perinuclear line"),
-                          ("exclude", "Exclusion line")]:
-            widget._region_combos[key].setCurrentText(name)
-        widget._update_containment_status()
-        assert "exclude" in widget._region_status.text().lower()
-        assert "perinuclear" in widget._region_status.text().lower()
-
-    def test_warning_when_perinuclear_outside_oocyte(self, make_napari_viewer):
-        viewer = make_napari_viewer()
-        widget = OoctyleAnalysisWidget(viewer)
-        self._add_line(viewer, "Oocyte line",      [50, 50, 0], [50, 50, 10])
-        self._add_line(viewer, "Perinuclear line", [50, 50, 0], [50, 50, 100])
+        # Nucleus centered far from oocyte → not contained.
+        self._add_line(viewer, "Oocyte line",  [50, 50, 0],   [50, 50, 20])
+        self._add_line(viewer, "Nucleus line", [50, 50, 100], [50, 50, 110])
         widget._refresh_image_layers()
         widget._region_combos["oocyte"].setCurrentText("Oocyte line")
-        widget._region_combos["perinuclear"].setCurrentText("Perinuclear line")
+        widget._region_combos["nucleus"].setCurrentText("Nucleus line")
         widget._update_containment_status()
-        assert "perinuclear" in widget._region_status.text().lower()
-        assert "oocyte" in widget._region_status.text().lower()
+        text = widget._region_status.text().lower()
+        assert "nucleus" in text and "oocyte" in text
+
+    def test_warning_when_oocyte_smaller_than_nucleus(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        widget = OoctyleAnalysisWidget(viewer)
+        # Shared center, oocyte radius 5 < nucleus radius 25.
+        self._add_line(viewer, "Oocyte line",  [50, 50, 45], [50, 50, 55])
+        self._add_line(viewer, "Nucleus line", [50, 50, 25], [50, 50, 75])
+        widget._refresh_image_layers()
+        widget._region_combos["oocyte"].setCurrentText("Oocyte line")
+        widget._region_combos["nucleus"].setCurrentText("Nucleus line")
+        widget._update_containment_status()
+        assert "larger" in widget._region_status.text().lower()
 
     def test_missing_region_skips_check(self, make_napari_viewer):
         viewer = make_napari_viewer()
         widget = OoctyleAnalysisWidget(viewer)
-        self._add_line(viewer, "Exclusion line", [0, 0, 0], [0, 0, 10])
+        self._add_line(viewer, "Nucleus line", [0, 0, 0], [0, 0, 10])
         widget._refresh_image_layers()
-        widget._region_combos["exclude"].setCurrentText("Exclusion line")
+        widget._region_combos["nucleus"].setCurrentText("Nucleus line")
+        # No oocyte layer selected -> containment check is skipped.
+        widget._region_combos["oocyte"].setCurrentIndex(-1)
         widget._update_containment_status()
         assert widget._region_status.text() == ""
 
@@ -761,11 +755,11 @@ class TestOocyteClipping:
         )
         viewer.add_shapes(
             [np.array([[10.0, 20.0, 19.0], [10.0, 20.0, 21.0]])],
-            shape_type="line", name="Exclusion line",
+            shape_type="line", name="Nucleus line",
         )
         widget._refresh_image_layers()
         widget._region_combos["oocyte"].setCurrentText("Oocyte line")
-        widget._region_combos["exclude"].setCurrentText("Exclusion line")
+        widget._region_combos["nucleus"].setCurrentText("Nucleus line")
 
         fake_spots = np.array([
             [10.0, 20.0, 25.0],  # inside oocyte, outside exclude
@@ -784,13 +778,13 @@ class TestOocyteClipping:
             spots = fake_spots.copy()
             mask = fake_mask.copy()
             oocyte = self.regions.get("oocyte")
-            exclude = self.regions.get("exclude")
+            nucleus = self.regions.get("nucleus")
             if oocyte is not None:
                 spots = filter_spots(spots, oocyte, keep="inside")
                 apply_sphere_to_mask(mask, oocyte, mode="zero_outside")
-            if exclude is not None:
-                spots = filter_spots(spots, exclude, keep="outside")
-                apply_sphere_to_mask(mask, exclude, mode="zero_inside")
+            if nucleus is not None:
+                spots = filter_spots(spots, nucleus, keep="outside")
+                apply_sphere_to_mask(mask, nucleus, mode="zero_inside")
             captured["spots"] = spots
             captured["mask"] = mask
 
@@ -865,7 +859,7 @@ class TestZonalChartWiring:
         widget._run_overlap_analysis()
         assert widget._charts_layout.count() == 2
 
-    def test_zonal_chart_added_when_both_regions_drawn(self, make_napari_viewer):
+    def test_zonal_chart_added_when_oocyte_and_nucleus_drawn(self, make_napari_viewer):
         viewer = make_napari_viewer()
         mask_a = np.ones((10, 10, 10), dtype=np.uint8)
         mask_b = np.ones((10, 10, 10), dtype=np.uint8)
@@ -876,13 +870,13 @@ class TestZonalChartWiring:
             shape_type="line", name="Oocyte line",
         )
         viewer.add_shapes(
-            [np.array([[5.0, 5.0, 3.0], [5.0, 5.0, 7.0]])],
-            shape_type="line", name="Perinuclear line",
+            [np.array([[5.0, 5.0, 4.0], [5.0, 5.0, 6.0]])],
+            shape_type="line", name="Nucleus line",
         )
         widget = OoctyleAnalysisWidget(viewer)
         widget._mask_a_combo.setCurrentText("A")
         widget._mask_b_combo.setCurrentText("B")
         widget._region_combos["oocyte"].setCurrentText("Oocyte line")
-        widget._region_combos["perinuclear"].setCurrentText("Perinuclear line")
+        widget._region_combos["nucleus"].setCurrentText("Nucleus line")
         widget._run_overlap_analysis()
         assert widget._charts_layout.count() == 3

@@ -35,11 +35,17 @@ from napari_ooctyle_analysis import _analysis as analysis
 from napari_ooctyle_analysis import _regions as regions
 
 REGION_DESCRIPTORS = [
-    # key,           label,           edge_color
-    ("oocyte",       "Oocyte",        "cyan"),
-    ("perinuclear",  "Perinuclear",   "magenta"),
-    ("exclude",      "Exclude",       "yellow"),
+    # key,       label,     edge_color   (manually drawn regions only)
+    ("oocyte",  "Oocyte",  "cyan"),
+    ("nucleus", "Nucleus", "yellow"),
 ]
+
+# Label + edge color for every region, including the computed perinuclear shell.
+REGION_VIZ = {
+    "oocyte":      ("Oocyte",      "cyan"),
+    "nucleus":     ("Nucleus",     "yellow"),
+    "perinuclear": ("Perinuclear", "magenta"),
+}
 
 
 class OoctyleAnalysisWidget(QWidget):
@@ -272,6 +278,27 @@ class OoctyleAnalysisWidget(QWidget):
             row.addWidget(show)
             regions_layout.addLayout(row)
 
+        # Perinuclear is auto-computed from nucleus + oocyte (not drawn).
+        peri_row = QHBoxLayout()
+        peri_row.addWidget(QLabel("Perinuclear:"))
+        peri_row.addWidget(QLabel("fraction"))
+        self._peri_fraction = QDoubleSpinBox()
+        self._peri_fraction.setRange(0.0, 100.0)
+        self._peri_fraction.setDecimals(1)
+        self._peri_fraction.setSingleStep(5.0)
+        self._peri_fraction.setValue(40.0)
+        self._peri_fraction.setSuffix(" %")
+        self._peri_fraction.setToolTip(
+            "Perinuclear boundary as a fraction of the nucleus-to-oocyte gap:\n"
+            "R_perinuclear = R_nucleus + fraction * (R_oocyte - R_nucleus)"
+        )
+        peri_row.addWidget(self._peri_fraction)
+        peri_show = QCheckBox("show")
+        peri_show.setChecked(True)
+        self._region_show["perinuclear"] = peri_show
+        peri_row.addWidget(peri_show)
+        regions_layout.addLayout(peri_row)
+
         scale_row = QHBoxLayout()
         scale_row.addWidget(QLabel("Scale (um/px):"))
         for axis_label, attr in [("Z:", "_scale_z"), ("Y:", "_scale_y"), ("X:", "_scale_x")]:
@@ -493,9 +520,8 @@ class OoctyleAnalysisWidget(QWidget):
     # ==================================================================
 
     def _add_region_shapes_layer(self, key: str):
-        label_map = {k: (lbl, col) for k, lbl, col in REGION_DESCRIPTORS}
-        label, color = label_map[key]
-        layer_name = "Exclusion line" if key == "exclude" else f"{label} line"
+        label, color = REGION_VIZ[key]
+        layer_name = f"{label} line"
         layer = self.viewer.add_shapes(
             name=layer_name, shape_type="line",
             edge_color=color, edge_width=2,
@@ -526,8 +552,7 @@ class OoctyleAnalysisWidget(QWidget):
         )
 
     def _visualize_region_sphere(self, key: str, sphere: "regions.Sphere"):
-        label_map = {k: (lbl, col) for k, lbl, col in REGION_DESCRIPTORS}
-        label, color = label_map[key]
+        label, color = REGION_VIZ[key]
         surface_name = f"{label} sphere"
         vertices, faces = regions.build_sphere_mesh(sphere)
         for layer in list(self.viewer.layers):
@@ -539,21 +564,30 @@ class OoctyleAnalysisWidget(QWidget):
         )
 
     def _get_all_region_spheres(self, ndim: int = 3) -> dict:
-        return {key: self._get_region_sphere(key, ndim=ndim) for key, _, _ in REGION_DESCRIPTORS}
+        spheres = {
+            key: self._get_region_sphere(key, ndim=ndim)
+            for key, _, _ in REGION_DESCRIPTORS
+        }
+        nucleus = spheres.get("nucleus")
+        oocyte = spheres.get("oocyte")
+        if nucleus is not None and oocyte is not None:
+            frac = self._peri_fraction.value() / 100.0
+            spheres["perinuclear"] = regions.compute_perinuclear(nucleus, oocyte, frac)
+        else:
+            spheres["perinuclear"] = None
+        return spheres
 
     def _update_containment_status(self) -> None:
-        """Recompute nesting (exclude in perinuclear in oocyte) and update status label."""
+        """Validate that the nucleus is inside the oocyte (perinuclear is derived)."""
         spheres = self._get_all_region_spheres(ndim=3)
+        nucleus = spheres["nucleus"]
+        oocyte = spheres["oocyte"]
         issues: list[str] = []
-        if spheres["exclude"] is not None and spheres["perinuclear"] is not None:
-            if not regions.contains_sphere(spheres["perinuclear"], spheres["exclude"]):
-                issues.append("exclude region is not inside perinuclear region")
-        if spheres["perinuclear"] is not None and spheres["oocyte"] is not None:
-            if not regions.contains_sphere(spheres["oocyte"], spheres["perinuclear"]):
-                issues.append("perinuclear region is not inside oocyte region")
-        if spheres["exclude"] is not None and spheres["oocyte"] is not None:
-            if not regions.contains_sphere(spheres["oocyte"], spheres["exclude"]):
-                issues.append("exclude region is not inside oocyte region")
+        if nucleus is not None and oocyte is not None:
+            if oocyte.radius_physical <= nucleus.radius_physical:
+                issues.append("oocyte radius must be larger than nucleus radius")
+            elif not regions.contains_sphere(oocyte, nucleus):
+                issues.append("nucleus region is not inside oocyte region")
         if issues:
             self._region_status.setStyleSheet("color: red;")
             self._region_status.setText("Warning: " + "; ".join(issues))
@@ -654,18 +688,18 @@ class OoctyleAnalysisWidget(QWidget):
             mask = np.zeros(model_meta["image_shape"], dtype=np.uint8)
 
         region_spheres = self._get_all_region_spheres(ndim=mask.ndim)
-        exclude = region_spheres["exclude"]
-        if exclude is not None:
+        nucleus = region_spheres["nucleus"]
+        if nucleus is not None:
             self._region_status.setText(
-                f"Excluded {n_excluded} spots "
-                f"(r={exclude.radius_physical:.1f} um at "
-                f"{np.array2string(exclude.center_px, precision=1)} px)"
+                f"Excluded {n_excluded} spots inside nucleus "
+                f"(r={nucleus.radius_physical:.1f} um at "
+                f"{np.array2string(nucleus.center_px, precision=1)} px)"
             )
         else:
             self._region_status.setText("")
-        for key, _, _ in REGION_DESCRIPTORS:
-            sphere = region_spheres[key]
-            if sphere is not None and self._region_show[key].isChecked():
+        for key, sphere in region_spheres.items():
+            show = self._region_show.get(key)
+            if sphere is not None and show is not None and show.isChecked():
                 self._visualize_region_sphere(key, sphere)
 
         labeled_mask, n_labels = ndlabel(mask)
@@ -763,16 +797,16 @@ class OoctyleAnalysisWidget(QWidget):
         peri = spheres["perinuclear"]
         if oocyte is None or peri is None:
             return
-        exclude = spheres["exclude"]
+        nucleus = spheres["nucleus"]
         oocyte_mask = regions.sphere_to_mask(oocyte, mask_a.shape)
         peri_mask = regions.sphere_to_mask(peri, mask_a.shape)
-        if exclude is not None:
-            excl_mask = regions.sphere_to_mask(exclude, mask_a.shape)
+        if nucleus is not None:
+            nucleus_mask = regions.sphere_to_mask(nucleus, mask_a.shape)
         else:
-            excl_mask = np.zeros(mask_a.shape, dtype=bool)
+            nucleus_mask = np.zeros(mask_a.shape, dtype=bool)
 
-        result_a = analysis.compute_zonal_voxels(mask_a, oocyte_mask, peri_mask, excl_mask)
-        result_b = analysis.compute_zonal_voxels(mask_b, oocyte_mask, peri_mask, excl_mask)
+        result_a = analysis.compute_zonal_voxels(mask_a, oocyte_mask, peri_mask, nucleus_mask)
+        result_b = analysis.compute_zonal_voxels(mask_b, oocyte_mask, peri_mask, nucleus_mask)
 
         from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
         fig = analysis.create_zonal_figure([name_a, name_b], [result_a, result_b])

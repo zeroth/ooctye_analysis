@@ -56,13 +56,13 @@ class PredictWorker(QThread):
 
             n_before = len(spots)
             oocyte = self.regions.get("oocyte")
-            exclude = self.regions.get("exclude")
+            nucleus = self.regions.get("nucleus")
             if oocyte is not None and len(spots) > 0:
                 self.progress.emit("Clipping to oocyte", 0, 0)
                 spots = filter_spots(spots, oocyte, keep="inside")
-            if exclude is not None and len(spots) > 0:
-                self.progress.emit("Filtering excluded region", 0, 0)
-                spots = filter_spots(spots, exclude, keep="outside")
+            if nucleus is not None and len(spots) > 0:
+                self.progress.emit("Filtering nucleus region", 0, 0)
+                spots = filter_spots(spots, nucleus, keep="outside")
             n_excluded = n_before - len(spots)
 
             img_for_fit = self.image
@@ -85,8 +85,8 @@ class PredictWorker(QThread):
             mask = result.mask
             if oocyte is not None:
                 apply_sphere_to_mask(mask, oocyte, mode="zero_outside")
-            if exclude is not None:
-                apply_sphere_to_mask(mask, exclude, mode="zero_inside")
+            if nucleus is not None:
+                apply_sphere_to_mask(mask, nucleus, mode="zero_inside")
 
             model_meta = {
                 "sigma": self.model.config.sigma,

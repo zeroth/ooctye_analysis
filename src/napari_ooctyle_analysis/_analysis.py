@@ -98,11 +98,11 @@ def compute_zonal_voxels(
     channel_mask: np.ndarray,
     oocyte_mask: np.ndarray,
     perinuclear_mask: np.ndarray,
-    exclude_mask: np.ndarray,
+    nucleus_mask: np.ndarray,
 ) -> dict:
-    """Count channel voxels in (perinuclear - exclude) vs (oocyte - perinuclear)."""
+    """Count channel voxels in (perinuclear - nucleus) vs (oocyte - perinuclear)."""
     channel = channel_mask > 0
-    peri_zone = perinuclear_mask & ~exclude_mask & oocyte_mask
+    peri_zone = perinuclear_mask & ~nucleus_mask & oocyte_mask
     rest_zone = oocyte_mask & ~perinuclear_mask
 
     n_perinuclear = int((channel & peri_zone).sum())
