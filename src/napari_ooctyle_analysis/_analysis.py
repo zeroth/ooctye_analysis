@@ -139,6 +139,31 @@ def compute_spot_regionprops(label_img: np.ndarray, intensity_img: np.ndarray) -
     return {key: np.asarray(value) for key, value in table.items()}
 
 
+def split_spot_intensities(
+    label_img_b: np.ndarray,
+    mask_a: np.ndarray,
+    table: dict,
+) -> dict:
+    """Split B's per-spot ``intensity_mean`` into overlap-with-A vs non-overlap.
+
+    A B spot overlaps A if ANY of its voxels lie in ``mask_a`` (> 0). Returns
+    ``{"overlap": ndarray, "non_overlap": ndarray, "n_overlap": int,
+    "n_non_overlap": int}``. Labels in ``table`` must match ``label_img_b``.
+    """
+    labels = np.asarray(table["label"])
+    means = np.asarray(table["intensity_mean"], dtype=np.float64)
+    overlapping = np.unique(label_img_b[(mask_a > 0) & (label_img_b > 0)])
+    is_overlap = np.isin(labels, overlapping)
+    overlap = means[is_overlap]
+    non_overlap = means[~is_overlap]
+    return {
+        "overlap": overlap,
+        "non_overlap": non_overlap,
+        "n_overlap": int(overlap.size),
+        "n_non_overlap": int(non_overlap.size),
+    }
+
+
 def create_zonal_figure(channel_names: list[str], results: list[dict]):
     """Grouped bar chart: per-channel perinuclear vs rest-of-oocyte voxels."""
     from matplotlib.figure import Figure

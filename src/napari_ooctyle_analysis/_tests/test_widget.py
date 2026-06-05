@@ -926,3 +926,31 @@ class TestComputeSpotRegionprops:
         table = compute_spot_regionprops(label_img, intensity)
         assert len(table["label"]) == 0
         assert len(table["intensity_mean"]) == 0
+
+
+class TestSplitSpotIntensities:
+    def test_overlap_vs_non_overlap(self):
+        from napari_ooctyle_analysis._analysis import split_spot_intensities
+        # B has two labels: label 1 (top-left) and label 2 (bottom-right).
+        label_b = np.zeros((4, 4), dtype=np.int32)
+        label_b[0:2, 0:2] = 1
+        label_b[2:4, 2:4] = 2
+        # A covers only the top-left quadrant -> label 1 overlaps, label 2 does not.
+        mask_a = np.zeros((4, 4), dtype=np.int32)
+        mask_a[0:2, 0:2] = 1
+        table = {"label": np.array([1, 2]), "intensity_mean": np.array([10.0, 20.0])}
+        split = split_spot_intensities(label_b, mask_a, table)
+        np.testing.assert_allclose(split["overlap"], [10.0])
+        np.testing.assert_allclose(split["non_overlap"], [20.0])
+        assert split["n_overlap"] == 1
+        assert split["n_non_overlap"] == 1
+
+    def test_no_overlap_when_a_empty(self):
+        from napari_ooctyle_analysis._analysis import split_spot_intensities
+        label_b = np.zeros((4, 4), dtype=np.int32)
+        label_b[0:2, 0:2] = 1
+        mask_a = np.zeros((4, 4), dtype=np.int32)
+        table = {"label": np.array([1]), "intensity_mean": np.array([7.0])}
+        split = split_spot_intensities(label_b, mask_a, table)
+        assert split["n_overlap"] == 0
+        np.testing.assert_allclose(split["non_overlap"], [7.0])
