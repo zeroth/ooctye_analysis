@@ -450,6 +450,18 @@ class TestComputeOverlap:
         assert abs(result["pct_a"] - 200 / 600 * 100) < 0.1
         assert abs(result["pct_b"] - 200 / 600 * 100) < 0.1
 
+    def test_non_overlap_mask_is_a_minus_b(self):
+        """non_overlap_mask = A & ~B; n_non_overlap = n_a - n_overlap."""
+        mask_a = np.zeros((10, 10, 10), dtype=np.uint8)
+        mask_b = np.zeros((10, 10, 10), dtype=np.uint8)
+        mask_a[:6] = 1  # 600 voxels
+        mask_b[4:] = 1  # overlap is slices 4-5 -> 200 voxels
+        result = compute_overlap(mask_a, mask_b)
+        assert result["n_non_overlap"] == 400  # 600 - 200
+        expected = ((mask_a > 0) & ~(mask_b > 0)).astype(np.uint8)
+        np.testing.assert_array_equal(result["non_overlap_mask"], expected)
+        assert int(result["non_overlap_mask"].sum()) == 400
+
 
 def test_analysis_tab_has_overlap_controls(make_napari_viewer):
     """Analysis tab has the expected overlap UI widgets."""
@@ -504,6 +516,48 @@ def test_overlap_end_to_end(make_napari_viewer):
     assert "800" in widget._overlap_status.text()
     # A chart was added (layout has stretch + 1 chart = 2 items)
     assert widget._charts_layout.count() == 2
+
+
+def test_overlap_adds_overlap_and_non_overlap_layers(make_napari_viewer):
+    """With the mask-layer checkbox on, both overlap and A\\B layers are added."""
+    viewer = make_napari_viewer()
+    mask_a = np.zeros((10, 20, 20), dtype=np.uint8)
+    mask_b = np.zeros((10, 20, 20), dtype=np.uint8)
+    mask_a[:6] = 1
+    mask_b[4:] = 1
+    viewer.add_labels(mask_a, name="Mask A")
+    viewer.add_labels(mask_b, name="Mask B")
+
+    widget = OoctyleAnalysisWidget(viewer)
+    widget._mask_a_combo.setCurrentText("Mask A")
+    widget._mask_b_combo.setCurrentText("Mask B")
+    widget._show_overlap_layer.setChecked(True)
+    widget._run_overlap_analysis()
+
+    names = [l.name for l in viewer.layers]
+    assert "Mask A & Mask B Overlap Mask" in names
+    assert "Mask A \\ Mask B Non-overlap Mask" in names
+
+
+def test_no_mask_layers_when_checkbox_off(make_napari_viewer):
+    """With the checkbox off, neither overlap nor non-overlap layer is added."""
+    viewer = make_napari_viewer()
+    mask_a = np.zeros((10, 20, 20), dtype=np.uint8)
+    mask_b = np.zeros((10, 20, 20), dtype=np.uint8)
+    mask_a[:6] = 1
+    mask_b[4:] = 1
+    viewer.add_labels(mask_a, name="Mask A")
+    viewer.add_labels(mask_b, name="Mask B")
+
+    widget = OoctyleAnalysisWidget(viewer)
+    widget._mask_a_combo.setCurrentText("Mask A")
+    widget._mask_b_combo.setCurrentText("Mask B")
+    widget._show_overlap_layer.setChecked(False)
+    widget._run_overlap_analysis()
+
+    names = [l.name for l in viewer.layers]
+    assert "Mask A & Mask B Overlap Mask" not in names
+    assert "Mask A \\ Mask B Non-overlap Mask" not in names
 
 
 def test_overlap_charts_accumulate(make_napari_viewer):
@@ -901,3 +955,313 @@ class TestZonalChartWiring:
         widget._region_combos["nucleus"].setCurrentText("Nucleus line")
         widget._run_overlap_analysis()
         assert widget._charts_layout.count() == 3
+
+
+class TestComputeSpotRegionprops:
+    def test_intensity_mean_per_label(self):
+        from napari_ooctyle_analysis._analysis import compute_spot_regionprops
+        label_img = np.zeros((4, 4, 4), dtype=np.int32)
+        label_img[0:2, 0:2, 0:2] = 1
+        label_img[2:4, 2:4, 2:4] = 2
+        intensity = np.zeros((4, 4, 4), dtype=np.float32)
+        intensity[0:2, 0:2, 0:2] = 10.0
+        intensity[2:4, 2:4, 2:4] = 20.0
+        table = compute_spot_regionprops(label_img, intensity)
+        assert list(table["label"]) == [1, 2]
+        np.testing.assert_allclose(table["intensity_mean"], [10.0, 20.0])
+        assert list(table["area"]) == [8, 8]
+        # 3D centroids present
+        assert "centroid-0" in table and "centroid-1" in table and "centroid-2" in table
+
+    def test_empty_label_image_yields_empty_table(self):
+        from napari_ooctyle_analysis._analysis import compute_spot_regionprops
+        label_img = np.zeros((3, 3, 3), dtype=np.int32)
+        intensity = np.zeros((3, 3, 3), dtype=np.float32)
+        table = compute_spot_regionprops(label_img, intensity)
+        assert len(table["label"]) == 0
+        assert len(table["intensity_mean"]) == 0
+
+
+class TestSplitSpotIntensities:
+    def test_overlap_vs_non_overlap(self):
+        from napari_ooctyle_analysis._analysis import split_spot_intensities
+        # B has two labels: label 1 (top-left) and label 2 (bottom-right).
+        label_b = np.zeros((4, 4), dtype=np.int32)
+        label_b[0:2, 0:2] = 1
+        label_b[2:4, 2:4] = 2
+        # A covers only the top-left quadrant -> label 1 overlaps, label 2 does not.
+        mask_a = np.zeros((4, 4), dtype=np.int32)
+        mask_a[0:2, 0:2] = 1
+        table = {"label": np.array([1, 2]), "intensity_mean": np.array([10.0, 20.0])}
+        split = split_spot_intensities(label_b, mask_a, table)
+        np.testing.assert_allclose(split["overlap"], [10.0])
+        np.testing.assert_allclose(split["non_overlap"], [20.0])
+        assert split["n_overlap"] == 1
+        assert split["n_non_overlap"] == 1
+
+    def test_no_overlap_when_a_empty(self):
+        from napari_ooctyle_analysis._analysis import split_spot_intensities
+        label_b = np.zeros((4, 4), dtype=np.int32)
+        label_b[0:2, 0:2] = 1
+        mask_a = np.zeros((4, 4), dtype=np.int32)
+        table = {"label": np.array([1]), "intensity_mean": np.array([7.0])}
+        split = split_spot_intensities(label_b, mask_a, table)
+        assert split["n_overlap"] == 0
+        np.testing.assert_allclose(split["non_overlap"], [7.0])
+
+
+class TestIntensityHistogramFigure:
+    def test_two_axes_with_data(self):
+        from napari_ooctyle_analysis._analysis import create_intensity_histogram_figure
+        split = {
+            "overlap": np.array([1.0, 2.0, 2.0, 3.0]),
+            "non_overlap": np.array([4.0, 5.0]),
+            "n_overlap": 4, "n_non_overlap": 2,
+        }
+        fig = create_intensity_histogram_figure("Channel 1 mask", split)
+        assert fig is not None
+        assert len(fig.axes) == 2
+
+    def test_empty_arrays_do_not_crash(self):
+        from napari_ooctyle_analysis._analysis import create_intensity_histogram_figure
+        split = {"overlap": np.array([]), "non_overlap": np.array([]),
+                 "n_overlap": 0, "n_non_overlap": 0}
+        fig = create_intensity_histogram_figure("B", split)
+        assert len(fig.axes) == 2
+
+    def test_all_equal_values_do_not_crash(self):
+        from napari_ooctyle_analysis._analysis import create_intensity_histogram_figure
+        split = {
+            "overlap": np.array([7.0, 7.0, 7.0]),
+            "non_overlap": np.array([7.0]),
+            "n_overlap": 3, "n_non_overlap": 1,
+        }
+        fig = create_intensity_histogram_figure("B", split)
+        assert len(fig.axes) == 2
+
+
+class TestSpotTableToRows:
+    def test_header_order_and_rows(self):
+        from napari_ooctyle_analysis._analysis import spot_table_to_rows
+        table = {
+            "label": np.array([1, 2]),
+            "centroid-0": np.array([0.5, 2.5]),
+            "centroid-1": np.array([0.5, 2.5]),
+            "centroid-2": np.array([0.5, 2.5]),
+            "area": np.array([8, 8]),
+            "intensity_mean": np.array([10.0, 20.0]),
+        }
+        header, rows = spot_table_to_rows(table)
+        assert header == ["label", "centroid-0", "centroid-1", "centroid-2", "area", "intensity_mean"]
+        assert len(rows) == 2
+        assert rows[0][0] == 1
+        assert rows[1][5] == 20.0
+
+    def test_empty_table_has_header_no_rows(self):
+        from napari_ooctyle_analysis._analysis import spot_table_to_rows
+        table = {"label": np.array([]), "centroid-0": np.array([]),
+                 "centroid-1": np.array([]), "centroid-2": np.array([]),
+                 "area": np.array([]), "intensity_mean": np.array([])}
+        header, rows = spot_table_to_rows(table)
+        assert header[0] == "label"
+        assert rows == []
+
+
+class TestWorkerRegionpropsPipeline:
+    def test_nucleus_spot_excluded_from_table(self):
+        from napari_ooctyle_analysis._analysis import compute_spot_regionprops
+        from napari_ooctyle_analysis._regions import Sphere, apply_sphere_to_mask
+        from scipy.ndimage import label as ndlabel
+
+        shape = (1, 20, 20)
+        intensity = np.zeros(shape, dtype=np.float32)
+        mask = np.zeros(shape, dtype=np.uint8)
+        # Spot A: outside nucleus (far corner). Spot B: at the nucleus center.
+        mask[0, 2:4, 2:4] = 1;  intensity[0, 2:4, 2:4] = 50.0
+        mask[0, 9:11, 9:11] = 1; intensity[0, 9:11, 9:11] = 99.0
+        nucleus = Sphere(
+            center_px=np.array([0.0, 10.0, 10.0]),
+            radius_physical=3.0,
+            scale=np.array([1.0, 1.0, 1.0]),
+        )
+        # Worker pipeline: zero inside nucleus, then label, then regionprops.
+        apply_sphere_to_mask(mask, nucleus, mode="zero_inside")
+        labeled, _ = ndlabel(mask)
+        table = compute_spot_regionprops(labeled, intensity)
+        # Only the far-corner spot survives; the 99.0 (nucleus) spot is gone.
+        assert table["intensity_mean"].size == 1
+        np.testing.assert_allclose(table["intensity_mean"], [50.0])
+
+
+class TestDetectionMetadata:
+    def _widget(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        viewer.add_image(np.zeros((2, 8, 8), dtype=np.float32), name="vol")
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._image_combo.setCurrentText("vol")
+        return viewer, widget
+
+    def test_metadata_attached_when_present(self, make_napari_viewer):
+        viewer, widget = self._widget(make_napari_viewer)
+        labeled = np.zeros((2, 8, 8), dtype=np.int32)
+        labeled[0, 1:3, 1:3] = 1
+        table = {"label": np.array([1]), "intensity_mean": np.array([5.0]),
+                 "centroid-0": np.array([0.0]), "centroid-1": np.array([2.0]),
+                 "centroid-2": np.array([2.0]), "area": np.array([4])}
+        meta = {"image_shape": (2, 8, 8), "n_excluded": 0, "mask": labeled,
+                "labeled_mask": labeled, "n_labels": 1, "spot_intensity": table}
+        widget._on_detection_finished(np.zeros((0, 3)), None, meta)
+        layer = viewer.layers["vol mask"]
+        assert "spot_intensity" in layer.metadata
+        assert list(layer.metadata["spot_intensity"]["label"]) == [1]
+
+    def test_fallback_without_metadata(self, make_napari_viewer):
+        viewer, widget = self._widget(make_napari_viewer)
+        mask = np.zeros((2, 8, 8), dtype=np.uint8)
+        mask[0, 1:3, 1:3] = 1
+        meta = {"image_shape": (2, 8, 8), "n_excluded": 0, "mask": mask}
+        widget._on_detection_finished(np.zeros((0, 3)), None, meta)
+        layer = viewer.layers["vol mask"]
+        assert "spot_intensity" not in layer.metadata
+
+
+class TestIntensityHistogramWiring:
+    def _setup(self, make_napari_viewer, with_meta):
+        viewer = make_napari_viewer()
+        # A mask: label 1 in top-left. B mask: label 1 top-left (overlaps A),
+        # label 2 bottom-right (no overlap).
+        a = np.zeros((1, 8, 8), dtype=np.int32); a[0, 0:2, 0:2] = 1
+        b = np.zeros((1, 8, 8), dtype=np.int32); b[0, 0:2, 0:2] = 1; b[0, 6:8, 6:8] = 2
+        viewer.add_labels(a, name="A")
+        b_layer = viewer.add_labels(b, name="B")
+        if with_meta:
+            b_layer.metadata["spot_intensity"] = {
+                "label": np.array([1, 2]), "intensity_mean": np.array([10.0, 20.0]),
+            }
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._mask_a_combo.setCurrentText("A")
+        widget._mask_b_combo.setCurrentText("B")
+        return widget
+
+    def test_histogram_added_when_b_has_metadata(self, make_napari_viewer):
+        widget = self._setup(make_napari_viewer, with_meta=True)
+        widget._run_overlap_analysis()
+        # stretch (1) + overlap chart (1) + intensity histogram (1) = 3
+        assert widget._charts_layout.count() == 3
+
+    def test_no_histogram_without_metadata(self, make_napari_viewer):
+        widget = self._setup(make_napari_viewer, with_meta=False)
+        widget._run_overlap_analysis()
+        # stretch (1) + overlap chart (1) only
+        assert widget._charts_layout.count() == 2
+        assert "intensity" in widget._overlap_status.text().lower()
+
+    def test_round_trip_real_regionprops_table(self, make_napari_viewer):
+        from napari_ooctyle_analysis._analysis import (
+            compute_spot_regionprops, split_spot_intensities,
+        )
+        viewer = make_napari_viewer()
+        # Build a real labeled B volume + intensity image, then derive the table
+        # exactly as the worker does (compute_spot_regionprops on the labeled mask).
+        label_b = np.zeros((1, 8, 8), dtype=np.int32)
+        label_b[0, 0:2, 0:2] = 1        # overlaps A
+        label_b[0, 6:8, 6:8] = 2        # does not overlap A
+        intensity = np.zeros((1, 8, 8), dtype=np.float32)
+        intensity[0, 0:2, 0:2] = 30.0
+        intensity[0, 6:8, 6:8] = 70.0
+        table = compute_spot_regionprops(label_b, intensity)
+
+        a = np.zeros((1, 8, 8), dtype=np.int32)
+        a[0, 0:2, 0:2] = 1              # A covers only B's label 1
+        viewer.add_labels(a, name="A")
+        b_layer = viewer.add_labels(label_b, name="B")
+        b_layer.metadata["spot_intensity"] = table
+
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._mask_a_combo.setCurrentText("A")
+        widget._mask_b_combo.setCurrentText("B")
+        widget._run_overlap_analysis()
+
+        # Histogram chart was added (stretch + overlap + histogram = 3).
+        assert widget._charts_layout.count() == 3
+        # The real table's labels index the B layer data: label 1 (intensity 30)
+        # overlaps A; label 2 (intensity 70) does not.
+        split = split_spot_intensities(label_b, a, table)
+        assert split["n_overlap"] == 1
+        assert split["n_non_overlap"] == 1
+        np.testing.assert_allclose(sorted(split["overlap"]), [30.0])
+        np.testing.assert_allclose(sorted(split["non_overlap"]), [70.0])
+
+
+class TestSpotTableExport:
+    def test_export_combo_lists_labels_layers(self, make_napari_viewer):
+        viewer = make_napari_viewer()
+        viewer.add_labels(np.zeros((1, 4, 4), dtype=np.int32), name="A")
+        viewer.add_image(np.zeros((1, 4, 4), dtype=np.float32), name="img")
+        widget = OoctyleAnalysisWidget(viewer)
+        items = [widget._export_combo.itemText(i) for i in range(widget._export_combo.count())]
+        assert "A" in items
+        assert "img" not in items
+
+    def test_export_writes_csv(self, tmp_path, monkeypatch, make_napari_viewer):
+        from qtpy.QtWidgets import QFileDialog
+        viewer = make_napari_viewer()
+        layer = viewer.add_labels(np.zeros((1, 4, 4), dtype=np.int32), name="A")
+        layer.metadata["spot_intensity"] = {
+            "label": np.array([1, 2]),
+            "centroid-0": np.array([0.0, 0.0]),
+            "centroid-1": np.array([1.0, 3.0]),
+            "centroid-2": np.array([1.0, 3.0]),
+            "area": np.array([4, 4]),
+            "intensity_mean": np.array([10.0, 20.0]),
+        }
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._export_combo.setCurrentText("A")
+        out = tmp_path / "spots.csv"
+        monkeypatch.setattr(
+            QFileDialog, "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(out), "CSV (*.csv)")),
+        )
+        widget._export_spot_table_csv()
+        assert out.exists()
+        lines = out.read_text().strip().splitlines()
+        assert lines[0].split(",")[0] == "label"
+        assert len(lines) == 3  # header + 2 spots
+
+    def test_export_without_metadata_writes_nothing(self, tmp_path, monkeypatch, make_napari_viewer):
+        from qtpy.QtWidgets import QFileDialog
+        viewer = make_napari_viewer()
+        viewer.add_labels(np.zeros((1, 4, 4), dtype=np.int32), name="A")
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._export_combo.setCurrentText("A")
+        out = tmp_path / "nope.csv"
+        monkeypatch.setattr(
+            QFileDialog, "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(out), "CSV (*.csv)")),
+        )
+        widget._export_spot_table_csv()
+        assert not out.exists()
+        assert "no per-spot" in widget._export_status.text().lower()
+
+    def test_export_handles_write_error(self, tmp_path, monkeypatch, make_napari_viewer):
+        from qtpy.QtWidgets import QFileDialog
+        viewer = make_napari_viewer()
+        layer = viewer.add_labels(np.zeros((1, 4, 4), dtype=np.int32), name="A")
+        layer.metadata["spot_intensity"] = {
+            "label": np.array([1]),
+            "centroid-0": np.array([0.0]),
+            "centroid-1": np.array([1.0]),
+            "centroid-2": np.array([1.0]),
+            "area": np.array([4]),
+            "intensity_mean": np.array([10.0]),
+        }
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._export_combo.setCurrentText("A")
+        bad = tmp_path / "does_not_exist" / "spots.csv"  # parent dir missing -> open() raises
+        monkeypatch.setattr(
+            QFileDialog, "getSaveFileName",
+            staticmethod(lambda *a, **k: (str(bad), "CSV (*.csv)")),
+        )
+        widget._export_spot_table_csv()
+        assert not bad.exists()
+        assert "export failed" in widget._export_status.text().lower()
