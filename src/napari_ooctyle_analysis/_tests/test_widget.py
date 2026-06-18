@@ -560,6 +560,36 @@ def test_no_mask_layers_when_checkbox_off(make_napari_viewer):
     assert "Mask A \\ Mask B Non-overlap Mask" not in names
 
 
+def test_region_layers_carry_underlying_spot_tables(make_napari_viewer):
+    """Overlap/non-overlap layers get a channel-tagged spot table from both channels."""
+    viewer = make_napari_viewer()
+    # A label spans cols 0-3; B label covers cols 2-5. Overlap = cols 2-3; A\B = cols 0-1.
+    a = np.zeros((1, 8, 8), dtype=np.int32); a[0, 0:2, 0:4] = 1
+    b = np.zeros((1, 8, 8), dtype=np.int32); b[0, 0:2, 2:6] = 1
+    a_layer = viewer.add_labels(a, name="A")
+    b_layer = viewer.add_labels(b, name="B")
+    a_layer.metadata["spot_intensity"] = {
+        "label": np.array([1]), "centroid-0": np.array([0.0]),
+        "centroid-1": np.array([0.5]), "centroid-2": np.array([1.5]),
+        "area": np.array([8]), "intensity_mean": np.array([10.0])}
+    b_layer.metadata["spot_intensity"] = {
+        "label": np.array([1]), "centroid-0": np.array([0.0]),
+        "centroid-1": np.array([0.5]), "centroid-2": np.array([3.5]),
+        "area": np.array([8]), "intensity_mean": np.array([20.0])}
+
+    widget = OoctyleAnalysisWidget(viewer)
+    widget._mask_a_combo.setCurrentText("A")
+    widget._mask_b_combo.setCurrentText("B")
+    widget._show_overlap_layer.setChecked(True)
+    widget._run_overlap_analysis()
+
+    overlap = viewer.layers["A & B Overlap Mask"].metadata["spot_intensity"]
+    assert sorted(set(overlap["channel"])) == ["A", "B"]
+
+    non_overlap = viewer.layers["A \\ B Non-overlap Mask"].metadata["spot_intensity"]
+    assert set(non_overlap["channel"]) == {"A"}
+
+
 def test_overlap_charts_accumulate(make_napari_viewer):
     """Multiple overlap runs add multiple charts."""
     viewer = make_napari_viewer()
@@ -1065,6 +1095,84 @@ class TestSpotTableToRows:
         header, rows = spot_table_to_rows(table)
         assert header[0] == "label"
         assert rows == []
+
+    def test_channel_column_is_first_when_present(self):
+        from napari_ooctyle_analysis._analysis import spot_table_to_rows
+        table = {
+            "channel": np.array(["A", "B"]),
+            "label": np.array([1, 1]),
+            "centroid-0": np.array([0.0, 0.0]),
+            "centroid-1": np.array([0.5, 0.5]),
+            "centroid-2": np.array([0.5, 0.5]),
+            "area": np.array([4, 4]),
+            "intensity_mean": np.array([10.0, 20.0]),
+        }
+        header, rows = spot_table_to_rows(table)
+        assert header == ["channel", "label", "centroid-0", "centroid-1",
+                          "centroid-2", "area", "intensity_mean"]
+        assert rows[0][0] == "A"
+        assert rows[1][0] == "B"
+
+
+class TestComputeRegionSpotTable:
+    def _table(self, label, intensity, c2):
+        return {
+            "label": np.array([label]),
+            "centroid-0": np.array([0.0]),
+            "centroid-1": np.array([0.5]),
+            "centroid-2": np.array([float(c2)]),
+            "area": np.array([4]),
+            "intensity_mean": np.array([float(intensity)]),
+        }
+
+    def test_combines_both_channels_with_channel_column(self):
+        from napari_ooctyle_analysis._analysis import compute_region_spot_table
+        a_label = np.zeros((1, 6, 6), dtype=np.int32); a_label[0, 0:2, 0:2] = 1
+        b_label = np.zeros((1, 6, 6), dtype=np.int32); b_label[0, 0:2, 0:2] = 1
+        overlap = ((a_label > 0) & (b_label > 0)).astype(np.uint8)
+        result = compute_region_spot_table(
+            overlap,
+            [("A", a_label, self._table(1, 10.0, 0.5)),
+             ("B", b_label, self._table(1, 20.0, 0.5))],
+        )
+        assert list(result["channel"]) == ["A", "B"]
+        assert list(result["label"]) == [1, 1]
+        np.testing.assert_allclose(sorted(result["intensity_mean"]), [10.0, 20.0])
+
+    def test_b_absent_from_a_minus_b_region(self):
+        from napari_ooctyle_analysis._analysis import compute_region_spot_table
+        # A label spans cols 0-3; B label covers cols 2-3 (partial overlap).
+        a_label = np.zeros((1, 4, 4), dtype=np.int32); a_label[0, 0:2, 0:4] = 1
+        b_label = np.zeros((1, 4, 4), dtype=np.int32); b_label[0, 0:2, 2:4] = 1
+        non_overlap = ((a_label > 0) & ~(b_label > 0)).astype(np.uint8)  # cols 0-1
+        result = compute_region_spot_table(
+            non_overlap,
+            [("A", a_label, self._table(1, 10.0, 1.5)),
+             ("B", b_label, self._table(1, 20.0, 2.5))],
+        )
+        # A's label intersects A\B (cols 0-1) -> included; B lives in B -> excluded.
+        assert list(result["channel"]) == ["A"]
+        assert list(result["label"]) == [1]
+
+    def test_empty_region_returns_empty_dict(self):
+        from napari_ooctyle_analysis._analysis import compute_region_spot_table
+        a_label = np.zeros((1, 4, 4), dtype=np.int32); a_label[0, 0:2, 0:2] = 1
+        empty_region = np.zeros((1, 4, 4), dtype=np.uint8)
+        result = compute_region_spot_table(
+            empty_region, [("A", a_label, self._table(1, 10.0, 0.5))]
+        )
+        assert result == {}
+
+    def test_skips_channel_with_no_table(self):
+        from napari_ooctyle_analysis._analysis import compute_region_spot_table
+        a_label = np.zeros((1, 4, 4), dtype=np.int32); a_label[0, 0:2, 0:2] = 1
+        b_label = np.zeros((1, 4, 4), dtype=np.int32); b_label[0, 0:2, 0:2] = 1
+        region = (a_label > 0).astype(np.uint8)
+        result = compute_region_spot_table(
+            region,
+            [("A", a_label, self._table(1, 10.0, 0.5)), ("B", b_label, None)],
+        )
+        assert list(result["channel"]) == ["A"]
 
 
 class TestWorkerRegionpropsPipeline:

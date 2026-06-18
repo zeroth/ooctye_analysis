@@ -806,21 +806,22 @@ class OoctyleAnalysisWidget(QWidget):
         self._add_overlap_chart(name_a, name_b, result)
 
         if self._show_overlap_layer.isChecked():
+            channels = []
+            a_table = self.viewer.layers[name_a].metadata.get("spot_intensity")
+            b_table = self.viewer.layers[name_b].metadata.get("spot_intensity")
+            if a_table is not None:
+                channels.append((name_a, mask_a, a_table))
+            if b_table is not None:
+                channels.append((name_b, mask_b, b_table))
             if result["n_overlap"] > 0:
-                overlap_name = f"{name_a} & {name_b} Overlap Mask"
-                for layer in list(self.viewer.layers):
-                    if layer.name == overlap_name:
-                        self.viewer.layers.remove(layer)
-                self.viewer.add_labels(
-                    result["overlap_mask"], name=overlap_name, opacity=0.5,
+                self._add_region_mask_layer(
+                    f"{name_a} & {name_b} Overlap Mask",
+                    result["overlap_mask"], channels,
                 )
             if result["n_non_overlap"] > 0:
-                non_overlap_name = f"{name_a} \\ {name_b} Non-overlap Mask"
-                for layer in list(self.viewer.layers):
-                    if layer.name == non_overlap_name:
-                        self.viewer.layers.remove(layer)
-                self.viewer.add_labels(
-                    result["non_overlap_mask"], name=non_overlap_name, opacity=0.5,
+                self._add_region_mask_layer(
+                    f"{name_a} \\ {name_b} Non-overlap Mask",
+                    result["non_overlap_mask"], channels,
                 )
 
         self._overlap_status.setText(
@@ -831,6 +832,19 @@ class OoctyleAnalysisWidget(QWidget):
 
         self._maybe_add_zonal_chart(mask_a, mask_b, name_a, name_b)
         self._maybe_add_intensity_histogram(mask_a, mask_b, name_b)
+
+    def _add_region_mask_layer(self, layer_name: str, region_mask, channels: list) -> None:
+        """Add (replacing any existing) a region mask Labels layer and attach the
+        channel-tagged spot table of the points underlying that region, so it can be
+        exported via the spot-table CSV control.
+        """
+        for layer in list(self.viewer.layers):
+            if layer.name == layer_name:
+                self.viewer.layers.remove(layer)
+        layer = self.viewer.add_labels(region_mask, name=layer_name, opacity=0.5)
+        region_table = analysis.compute_region_spot_table(region_mask, channels)
+        if region_table:
+            layer.metadata["spot_intensity"] = region_table
 
     def _maybe_add_zonal_chart(self, mask_a, mask_b, name_a: str, name_b: str) -> None:
         spheres = self._get_all_region_spheres(ndim=mask_a.ndim)

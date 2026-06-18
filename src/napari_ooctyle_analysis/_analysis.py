@@ -209,8 +209,44 @@ def split_spot_intensities(
     }
 
 
+def compute_region_spot_table(region_mask: np.ndarray, channels: list) -> dict:
+    """Combine per-channel spot tables for spots whose labels intersect a region.
+
+    ``channels`` is a list of ``(channel_name, label_img, spot_table)``. For each
+    channel, keeps spots whose label has ANY voxel in ``region_mask`` (> 0), tags
+    each kept row with a ``channel`` value (``channel_name``), and concatenates.
+    Returns a dict-of-arrays with a leading ``channel`` column plus the regionprops
+    columns (label, centroid-0/1/2, area, intensity_mean). Channels with a ``None``
+    or empty table, or with no matching spots, contribute nothing. Returns ``{}``
+    when nothing matches. All provided tables are assumed to share the same keys.
+    """
+    region = region_mask > 0
+    result: dict | None = None
+    for channel_name, label_img, table in channels:
+        if table is None:
+            continue
+        labels = np.asarray(table["label"])
+        if labels.size == 0:
+            continue
+        in_region = np.unique(label_img[region & (label_img > 0)])
+        keep = np.isin(labels, in_region)
+        n_keep = int(keep.sum())
+        if n_keep == 0:
+            continue
+        if result is None:
+            result = {"channel": []}
+            for key in table:
+                result[key] = []
+        result["channel"].extend([channel_name] * n_keep)
+        for key in table:
+            result[key].extend(np.asarray(table[key])[keep].tolist())
+    if result is None:
+        return {}
+    return {key: np.asarray(value) for key, value in result.items()}
+
+
 _SPOT_TABLE_COLUMN_ORDER = (
-    "label", "centroid-0", "centroid-1", "centroid-2", "area", "intensity_mean",
+    "channel", "label", "centroid-0", "centroid-1", "centroid-2", "area", "intensity_mean",
 )
 
 
