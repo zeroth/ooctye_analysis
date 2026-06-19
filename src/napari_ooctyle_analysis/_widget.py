@@ -47,6 +47,9 @@ REGION_VIZ = {
     "perinuclear": ("Perinuclear", "magenta"),
 }
 
+# Sentinel for the optional Channel C selector in the Analysis tab.
+C_NONE = "(none)"
+
 
 class OoctyleAnalysisWidget(QWidget):
     """Primary widget for oocyte analysis in napari.
@@ -71,6 +74,7 @@ class OoctyleAnalysisWidget(QWidget):
         }
         self._mask_a_combo = QComboBox()
         self._mask_b_combo = QComboBox()
+        self._mask_c_combo = QComboBox()
         self._export_combo = QComboBox()
 
         # Tab container
@@ -129,6 +133,11 @@ class OoctyleAnalysisWidget(QWidget):
         row = QHBoxLayout()
         row.addWidget(QLabel("Channel B:"))
         row.addWidget(self._mask_b_combo)
+        ctrl_layout.addLayout(row)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Channel C:"))
+        row.addWidget(self._mask_c_combo)
         ctrl_layout.addLayout(row)
 
         self._show_overlap_layer = QCheckBox("Show overlap & non-overlap mask layers")
@@ -358,7 +367,11 @@ class OoctyleAnalysisWidget(QWidget):
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
 
-        layout.addWidget(self._build_finetune_group())
+        # Fine-tuning UI is intentionally hidden from the Segmentation tab.
+        # The group (and all its widgets/handlers) is still built so the code and
+        # behavior are retained — re-add it to `layout` to surface it again.
+        self._finetune_group = self._build_finetune_group()
+        self._finetune_group.hide()
         layout.addStretch()
 
         # Layer events
@@ -439,12 +452,15 @@ class OoctyleAnalysisWidget(QWidget):
     def _refresh_image_layers(self, event=None):
         all_combos = [
             self._image_combo, self._mask_a_combo, self._mask_b_combo,
-            self._export_combo,
+            self._mask_c_combo, self._export_combo,
             *self._region_combos.values(),
         ]
         prev = {combo: combo.currentText() for combo in all_combos}
         for combo in all_combos:
             combo.clear()
+
+        # Channel C is optional; its first entry is the "(none)" sentinel.
+        self._mask_c_combo.addItem(C_NONE)
 
         for layer in self.viewer.layers:
             if isinstance(layer, napari.layers.Image):
@@ -455,6 +471,7 @@ class OoctyleAnalysisWidget(QWidget):
             elif isinstance(layer, napari.layers.Labels):
                 self._mask_a_combo.addItem(layer.name)
                 self._mask_b_combo.addItem(layer.name)
+                self._mask_c_combo.addItem(layer.name)
                 self._export_combo.addItem(layer.name)
 
         for combo, text in prev.items():
@@ -806,13 +823,7 @@ class OoctyleAnalysisWidget(QWidget):
         self._add_overlap_chart(name_a, name_b, result)
 
         if self._show_overlap_layer.isChecked():
-            channels = []
-            a_table = self.viewer.layers[name_a].metadata.get("spot_intensity")
-            b_table = self.viewer.layers[name_b].metadata.get("spot_intensity")
-            if a_table is not None:
-                channels.append((name_a, mask_a, a_table))
-            if b_table is not None:
-                channels.append((name_b, mask_b, b_table))
+            channels = self._collect_channels((name_a, mask_a), (name_b, mask_b))
             if result["n_overlap"] > 0:
                 self._add_region_mask_layer(
                     f"{name_a} & {name_b} Overlap Mask",
@@ -830,8 +841,60 @@ class OoctyleAnalysisWidget(QWidget):
             f"({result['pct_a']:.1f}% of A, {result['pct_b']:.1f}% of B)"
         )
 
+        self._run_channel_c_step(name_a, mask_a, name_b, mask_b, result)
         self._maybe_add_zonal_chart(mask_a, mask_b, name_a, name_b)
         self._maybe_add_intensity_histogram(mask_a, mask_b, name_b)
+
+    def _collect_channels(self, *name_mask_pairs) -> list:
+        """Return ``[(name, mask, table), ...]`` for channels whose layer carries a
+        ``spot_intensity`` regionprops table (others are skipped)."""
+        channels = []
+        for name, mask in name_mask_pairs:
+            table = self.viewer.layers[name].metadata.get("spot_intensity")
+            if table is not None:
+                channels.append((name, mask, table))
+        return channels
+
+    def _run_channel_c_step(self, name_a, mask_a, name_b, mask_b, result) -> None:
+        """Intersect the A∩B and A\\B regions with an optional Channel C.
+
+        Produces (A∩B)∩C and (A\\B)∩C: an overlap chart for each, plus exportable
+        mask layers carrying channel-tagged (A/B/C) underlying-spot tables. No-op
+        when Channel C is "(none)".
+        """
+        name_c = self._mask_c_combo.currentText()
+        if not name_c or name_c == C_NONE:
+            return
+        try:
+            mask_c = np.asarray(self.viewer.layers[name_c].data)
+        except KeyError:
+            self._overlap_status.setText(f"Layer not found: {name_c}")
+            return
+        if mask_c.shape != mask_a.shape:
+            self._overlap_status.setText(
+                f"Shape mismatch: {name_c} {mask_c.shape} vs {name_a} {mask_a.shape}"
+            )
+            return
+
+        res_abc = analysis.compute_overlap(result["overlap_mask"], mask_c)
+        res_anb_c = analysis.compute_overlap(result["non_overlap_mask"], mask_c)
+        self._add_overlap_chart(f"{name_a}∩{name_b}", name_c, res_abc)
+        self._add_overlap_chart(f"{name_a}\\{name_b}", name_c, res_anb_c)
+
+        if self._show_overlap_layer.isChecked():
+            channels = self._collect_channels(
+                (name_a, mask_a), (name_b, mask_b), (name_c, mask_c)
+            )
+            if res_abc["n_overlap"] > 0:
+                self._add_region_mask_layer(
+                    f"{name_a} & {name_b} & {name_c} Overlap Mask",
+                    res_abc["overlap_mask"], channels,
+                )
+            if res_anb_c["n_overlap"] > 0:
+                self._add_region_mask_layer(
+                    f"({name_a} \\ {name_b}) & {name_c} Overlap Mask",
+                    res_anb_c["overlap_mask"], channels,
+                )
 
     def _add_region_mask_layer(self, layer_name: str, region_mask, channels: list) -> None:
         """Add (replacing any existing) a region mask Labels layer and attach the

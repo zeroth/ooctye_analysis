@@ -590,6 +590,97 @@ def test_region_layers_carry_underlying_spot_tables(make_napari_viewer):
     assert set(non_overlap["channel"]) == {"A"}
 
 
+def _add_abc_labels(viewer, with_metadata=False):
+    """A: cols 0-3, B: cols 2-5, C: cols 1-3 in a (1,8,8) volume.
+
+    => A∩B = cols 2-3; A\\B = cols 0-1; (A∩B)∩C = cols 2-3; (A\\B)∩C = col 1.
+    """
+    a = np.zeros((1, 8, 8), dtype=np.int32); a[0, 0:2, 0:4] = 1
+    b = np.zeros((1, 8, 8), dtype=np.int32); b[0, 0:2, 2:6] = 1
+    c = np.zeros((1, 8, 8), dtype=np.int32); c[0, 0:2, 1:4] = 1
+    layers = [viewer.add_labels(a, name="A"),
+              viewer.add_labels(b, name="B"),
+              viewer.add_labels(c, name="C")]
+    if with_metadata:
+        for layer in layers:
+            layer.metadata["spot_intensity"] = {
+                "label": np.array([1]), "centroid-0": np.array([0.0]),
+                "centroid-1": np.array([0.5]), "centroid-2": np.array([1.5]),
+                "area": np.array([8]), "intensity_mean": np.array([10.0])}
+    return layers
+
+
+def test_channel_c_combo_lists_none_first(make_napari_viewer):
+    viewer = make_napari_viewer()
+    viewer.add_labels(np.zeros((1, 4, 4), dtype=np.int32), name="A")
+    widget = OoctyleAnalysisWidget(viewer)
+    assert widget._mask_c_combo.itemText(0) == "(none)"
+    items = [widget._mask_c_combo.itemText(i) for i in range(widget._mask_c_combo.count())]
+    assert "A" in items
+
+
+def test_no_c_step_when_none_selected(make_napari_viewer):
+    viewer = make_napari_viewer()
+    _add_abc_labels(viewer)
+    widget = OoctyleAnalysisWidget(viewer)
+    widget._mask_a_combo.setCurrentText("A")
+    widget._mask_b_combo.setCurrentText("B")
+    # C left at default "(none)"
+    widget._run_overlap_analysis()
+    names = [l.name for l in viewer.layers]
+    assert "A & B & C Overlap Mask" not in names
+    assert "(A \\ B) & C Overlap Mask" not in names
+
+
+def test_channel_c_overlap_adds_layers_with_channel_tables(make_napari_viewer):
+    viewer = make_napari_viewer()
+    _add_abc_labels(viewer, with_metadata=True)
+    widget = OoctyleAnalysisWidget(viewer)
+    widget._mask_a_combo.setCurrentText("A")
+    widget._mask_b_combo.setCurrentText("B")
+    widget._mask_c_combo.setCurrentText("C")
+    widget._show_overlap_layer.setChecked(True)
+    widget._run_overlap_analysis()
+
+    abc = viewer.layers["A & B & C Overlap Mask"].metadata["spot_intensity"]
+    assert set(abc["channel"]) == {"A", "B", "C"}
+    # B has no voxels in A\B, so (A\B)∩C carries only A and C spots.
+    anbc = viewer.layers["(A \\ B) & C Overlap Mask"].metadata["spot_intensity"]
+    assert set(anbc["channel"]) == {"A", "C"}
+
+
+def test_channel_c_adds_two_charts(make_napari_viewer):
+    def run(with_c):
+        viewer = make_napari_viewer()
+        _add_abc_labels(viewer)  # no metadata -> no intensity histogram either way
+        widget = OoctyleAnalysisWidget(viewer)
+        widget._mask_a_combo.setCurrentText("A")
+        widget._mask_b_combo.setCurrentText("B")
+        if with_c:
+            widget._mask_c_combo.setCurrentText("C")
+        widget._run_overlap_analysis()
+        return widget._charts_layout.count()
+
+    assert run(True) == run(False) + 2
+
+
+def test_channel_c_shape_mismatch_shows_error(make_napari_viewer):
+    viewer = make_napari_viewer()
+    a = np.zeros((1, 8, 8), dtype=np.int32); a[0, 0:2, 0:4] = 1
+    b = np.zeros((1, 8, 8), dtype=np.int32); b[0, 0:2, 2:6] = 1
+    c = np.zeros((1, 4, 4), dtype=np.int32); c[0, 0:2, 1:3] = 1  # mismatched shape
+    viewer.add_labels(a, name="A"); viewer.add_labels(b, name="B")
+    viewer.add_labels(c, name="C")
+    widget = OoctyleAnalysisWidget(viewer)
+    widget._mask_a_combo.setCurrentText("A")
+    widget._mask_b_combo.setCurrentText("B")
+    widget._mask_c_combo.setCurrentText("C")
+    widget._run_overlap_analysis()
+    assert "shape" in widget._overlap_status.text().lower()
+    names = [l.name for l in viewer.layers]
+    assert "A & B & C Overlap Mask" not in names
+
+
 def test_overlap_charts_accumulate(make_napari_viewer):
     """Multiple overlap runs add multiple charts."""
     viewer = make_napari_viewer()
