@@ -358,7 +358,11 @@ class OoctyleAnalysisWidget(QWidget):
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
 
-        layout.addWidget(self._build_finetune_group())
+        # Fine-tuning UI is intentionally hidden from the Segmentation tab.
+        # The group (and all its widgets/handlers) is still built so the code and
+        # behavior are retained — re-add it to `layout` to surface it again.
+        self._finetune_group = self._build_finetune_group()
+        self._finetune_group.hide()
         layout.addStretch()
 
         # Layer events
